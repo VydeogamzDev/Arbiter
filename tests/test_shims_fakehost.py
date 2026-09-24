@@ -21,15 +21,28 @@ NO_AUTOSTART = {**os.environ, "ARBITER_NO_AUTOSTART": "1"}
 
 
 def mcp_session(home):
+    import tempfile
+
     argv = cli_argv(home) + ["mcp"]
-    return subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            text=True, encoding="utf-8", env=NO_AUTOSTART)
+    err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
+                         text=True, encoding="utf-8", env=NO_AUTOSTART)
+    p.errfile = err  # type: ignore[attr-defined]
+    return p
 
 
 def rpc(p, i, method, params=None):
     p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params or {}}) + "\n")
     p.stdin.flush()
-    return json.loads(p.stdout.readline())
+    line = p.stdout.readline()
+    if not line.strip():  # the shim died or printed nothing: show why (CI has no log access)
+        try:
+            p.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+        p.errfile.seek(0)
+        raise AssertionError(f"mcp shim gave no reply to {method} (rc={p.poll()}): {p.errfile.read()[-1500:]!r}")
+    return json.loads(line)
 
 
 def test_mcp_protocol_basics(daemon):

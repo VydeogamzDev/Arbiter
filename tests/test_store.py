@@ -108,9 +108,18 @@ def test_crash_mid_write_recovers_committed_prefix(home, tmp_path):
     proc.kill()  # hard kill: TerminateProcess / SIGKILL, mid-transaction most of the time
     proc.wait()
     assert acked >= 150
-    assert integrity_ok(home.db)
-    conn = connect(home.db)
-    rows = conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0]
-    conn.close()
+    # Windows can release a killed process's handles (or finish an AV scan of the -wal file) a
+    # moment after wait() returns; WAL recovery then reports "disk I/O error". Retry briefly.
+    for attempt in range(20):
+        try:
+            assert integrity_ok(home.db)
+            conn = connect(home.db)
+            rows = conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0]
+            conn.close()
+            break
+        except sqlite3.OperationalError:
+            if attempt == 19:
+                raise
+            time.sleep(0.25)
     assert rows >= (acked + 1) * 5  # every acknowledged commit survived
     assert rows % 5 == 0  # no torn transaction
