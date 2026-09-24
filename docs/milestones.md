@@ -7,14 +7,14 @@ Conventions:
 - Every module ships behind its own feature flag and circuit breaker (§23).
 - **Tier** is the tier set a submilestone needs to be useful (§4.4.3): T1 MCP, T2 hooks, T3 transcripts, T4 orchestrator host (Hivemind) or driver session.
 - "Exit" means automated checks against §20.17. A milestone isn't done until they pass.
-- **GPU**: only M7.2+ and research track R5 need it.
+- **GPU**: only M7.2+ and research tracks R5/R6 need it.
 
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (publish pending)
        → M5 coverage → M6 indexes → M7 SemIf → M8 breakers → M9 advisory
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
-Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend
+Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
 ```
 
 ---
@@ -175,18 +175,25 @@ Build step 20 · Tier T1
 
 **Exit:** no stale results after edits or branch switches, secrets never indexed, and the index version recorded on every retrieval.
 
-## M7 — SemIf service
-Stage 3 · Build steps 21–22
+## M7 — SemIf service (semantic sensor)
+Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends-model-tiers-and-fine-tuning.md) · Research: [semantic-sensor-models](research/semantic-sensor-models.md)
 
-- **M7.1 Backend interface + null backend**: `semif/service`, `backends/null`, `health`. No GPU needed.
-- **M7.2 BF16 fresh backend**: `backends/cuda_bf16_fresh`, with a bounded queue, deadlines, OOM recovery, and restart backoff. **Needs the 3080 Ti.**
+- **M7.1 Backend interface + null backend**: `semif/service`, `backends/null`, `health`. Every backend returns the same scored-option result. No GPU needed.
+- **M7.2 llama.cpp GGUF backend**: `backends/llama_cpp`, with direct option-logit scoring, prefix caching, multi-LoRA, a bounded queue, deadlines, OOM recovery, and restart backoff. The SemIf BF16 path (`backends/semif_bf16`) is kept as the reference and parity backend. **Needs the 3080 Ti.**
+- **M7.2b Model tiers by VRAM**: Qwen3.5-4B Q4_K_M at 6 GB+, K2 Horizon 7B Q4_K_M at 12 GB+, Q6_K at 16 GB+ (K2 at 8 GB is opt-in, short context only). Reasoning is disabled for scoring.
 - **M7.3 Request budgeting**: `semif/request_budget`, using the exact tokenizer with criterion/envelope reserve (§7.2).
 - **M7.4 Validation**: `semif/validation`. Rejects NaN, malformed output, or a wrong revision, and abstains on failure (§7.3).
 - **M7.5 Mirroring + batching**: `semif/mirroring`, `batching`, with identical prefixes only.
-- **M7.6 `arbiter semif enable`**: checks CUDA and VRAM and downloads weights only after confirmation.
+- **M7.6 `arbiter semif enable`**: checks CUDA and VRAM, proposes the largest tier that fits, and downloads weights only after confirmation.
 - **M7.7 Shadow harness**: async scoring, never awaited in hooks (§4.4.5), with calibration data collection.
+- **M7.8 Sensor benchmark**: `eval/corpus/sensor/`, labeled judgments per decision family. It reports balanced accuracy, calibration (Brier/ECE), abstention rate and latency per model × quant × backend, measured on the exact quantized files.
 
-**Exit:** 0 malformed results consumed, queue saturation never blocks a hook, latency stable per §20.17, and rules-only mode fully functional with the null backend.
+**Exit:**
+- 0 malformed results consumed.
+- Queue saturation never blocks a hook.
+- Latency is stable per §20.17.
+- Rules-only mode is fully functional with the null backend.
+- The shipped tier table is backed by the benchmark: each tier beats the one below it, and each beats the rules, on its decision families.
 
 ## M8 — Policy core + full circuit breakers
 Stage 4 · Build step 23 · **Required before any automatic stage** (decision 0009)
@@ -267,4 +274,7 @@ Stages R1–R5 (§23.2). These start only after the core track is stable, and ne
 - **R2 — Learned utility shadow** (steps R2.1–R2.2): `eval/paired_trials`, `propensity`, `off_policy`, `statistics`, and `policy/utility_model`, `ood`. **Exit:** stable held-out predictions, with no hidden regression in any task class.
 - **R3 — Learned utility bounded auto** (step R3.1): `policy/conservative_policy`. **Exit:** a better constrained Pareto frontier than rules, on repo, time, model, and client holdouts.
 - **R4 — Selective branching** (steps R4.1–R4.2): `branching/*`; a worktree alone is rejected as a sandbox. **Exit:** net hard-task gain after cost, and 0 isolation failures.
-- **R5 — Backend optimization** (step R5.1, **needs the GPU**): BF16 shared-state against fresh, and an optional quantized backend. **Exit:** per-module and end-to-end parity gates pass (§22).
+- **R5 — Backend optimization** (step R5.1, **needs the GPU**): BF16 shared-state against fresh, plus an EXL3 backend once it supports the tier models (Qwen3.5 hybrid layers, `k2_horizon`). **Exit:** per-module and end-to-end parity gates pass (§22), and EXL3 is adopted only if faster at equal accuracy.
+- **R6 — Fine-tuned sensors** (step R6.1, **needs the GPU and real v0.1 traces**): QLoRA adapters per decision family on the tier base models.
+  - **Labels** come from outcomes, user decisions, and an offline Opus 5.5 pass over a sample; its cost is confirmed before each run.
+  - **Exit:** each adapter beats the untuned base and the rules on held-out repos and time windows, with no regression in other families. Calibration is re-fit on the quantized artifact.

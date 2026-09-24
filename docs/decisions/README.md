@@ -56,3 +56,4 @@ What this makes easier, harder, or rules out.
 | [0023](0023-m3-task-state-implementation.md) | M3 task-state choices: cursor engine, epoch rules, exit-status join, freshness, audit events | Accepted |
 | [0024](0024-m4-gate-verdict-rules.md) | M4 gate verdict rules: claims, low-strength and integrity conditions, breakers | Accepted |
 | [0025](0025-v0-1-packaging-and-launch.md) | v0.1 packaging, Claude Code plugin, client-home env for the daemon launcher | Accepted |
+| [0026](0026-sensor-backends-model-tiers-and-fine-tuning.md) | Semantic sensor: pluggable backends, VRAM model tiers (Qwen3.5-4B / K2 Horizon 7B), fine-tuned LoRA adapters | Accepted (plan) |

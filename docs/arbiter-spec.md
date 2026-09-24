@@ -297,7 +297,7 @@ A client whose config format, hook payloads, or transcript format has drifted fr
 | Component | Target |
 | --- | --- |
 | Router GPU | RTX 3080 Ti, 12 GB |
-| Router model | Qwen3.5-4B via SemIf |
+| Router model | Tiered by VRAM behind a backend interface (decision 0026): Qwen3.5-4B (6 GB+) or K2 Horizon 7B (12 GB+), GGUF Q4–Q6 via llama.cpp first; SemIf BF16 kept as the reference path |
 | Supported reference inference | BF16 fresh scoring |
 | Optimized reference | BF16 shared-state only after drift gate |
 | Optional future deployment | NVIDIA Q8 only after backend implementation + parity |
@@ -315,6 +315,8 @@ A client whose config format, hook payloads, or transcript format has drifted fr
 | Platforms | Windows, macOS, Linux |
 
 The 3080 Ti target is sufficient for prototyping BF16 Qwen3.5-4B only if measured VRAM headroom remains adequate at the chosen SemIf state length/batch size. OOM behavior must be tested rather than inferred from weight size alone.
+
+Decision 0026 makes the model and runtime pluggable. On 12 GB, the default tier is K2 Horizon 7B at Q4_K_M (about 5.6 GB of weights plus about 147 KB of KV cache per token). The estimated 3080 Ti rates are about 4,600 prefill tok/s and about 4–5 fresh 1k-token judgments/s. Both are far above the sensor's demand, so the model is chosen by measured accuracy, not speed (see `docs/research/semantic-sensor-models.md`).
 
 The GPU is an accelerator for the semantic layer, not a prerequisite for the control plane. Without it, Arbiter runs with the null backend: deterministic rules plus conservative fallbacks (§7.7). The following all remain fully functional:
 
@@ -1019,6 +1021,22 @@ The SemIf service must use:
 The service sits behind a backend interface (`null`, `cuda_bf16_fresh`, later shared-state and quantized backends), so modules never depend on which backend is active.
 
 A controller decision that exceeds its latency budget falls back according to the module's fail policy.
+
+## 7.9 Backends, model tiers, and fine-tuned adapters
+
+Decision 0026 applies. SemIf's direct-logit scoring is the technique; the runtime and model sit behind a backend interface.
+
+- **Backends:**
+  - `null` (rules only);
+  - `llama_cpp` (GGUF, multi-LoRA, prefix caching; the first real backend);
+  - `semif_bf16` (reference and parity path);
+  - `exl3`, later.
+
+  Every backend returns the same scored-option result and passes §7.3 validation.
+- **Model tiers by VRAM:** Qwen3.5-4B at 6 GB+, K2 Horizon 7B at 12 GB+ (Q6_K at 16 GB+). Reasoning is disabled for scoring.
+- **Adapters:** one base model stays in VRAM, with a LoRA adapter per decision family (completion claim, scope change, context relevance, retrieval relevance, review risk).
+- **Selection by measurement:** a sensor benchmark in the eval corpus reports accuracy, calibration, abstention and latency per model × quant × backend. Calibration and parity run on the exact quantized artifact (§22).
+- **Authority unchanged:** a stronger or fine-tuned sensor still can't certify, widen permissions or block by itself (§7.6).
 
 # 8. Module A — Reasoning Scheduler
 
@@ -2891,6 +2909,12 @@ semif:
   queue_capacity: 32
   max_concurrent_batches: 2
   reference_backend: cuda_bf16_fresh
+  backend: auto                 # auto | llama_cpp | exl3 | semif_bf16 | null (decision 0026); inert until M7
+  model_tiers:                  # `arbiter semif enable` proposes the largest tier that fits the GPU
+    - {min_vram_gb: 6, model: Qwen3.5-4B, quant: Q4_K_M}
+    - {min_vram_gb: 12, model: K2-Horizon-7B, quant: Q4_K_M}
+    - {min_vram_gb: 16, model: K2-Horizon-7B, quant: Q6_K}
+  adapters: {}                  # decision family -> fine-tuned LoRA adapter (research track R6)
   shared_state_enabled: false
   nvidia_q8_enabled: false
   mirror_binary_questions: true
