@@ -62,8 +62,11 @@ class Ingestor:
     def _excluded(self, reason: str) -> IngestResult:
         now = time.time()
         try:
-            self.writer.submit(lambda c: bump_scope_skip(c, reason, now))
-        except (ReadOnlyDegraded, WriterBusy):
+            fut = self.writer.submit(lambda c: bump_scope_skip(c, reason, now))
+            # Wait briefly so the counter is visible once the hook returns (status right after a
+            # hook must agree); still fail-open if the writer is slow.
+            fut.result(timeout=0.25)
+        except (ReadOnlyDegraded, WriterBusy, FutureTimeout):
             pass
         self._count("excluded")
         return IngestResult("excluded", reason=reason)
