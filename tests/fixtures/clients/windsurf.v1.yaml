@@ -1,0 +1,25 @@
+profile: windsurf
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- command
+- args
+- env
+- disabled
+client_names:
+- windsurf-client
+configs:
+  typical: |
+    {
+      "mcpServers": {
+        "github": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ],
+          "disabled": false
+        }
+      }
+    }
+  empty: ''

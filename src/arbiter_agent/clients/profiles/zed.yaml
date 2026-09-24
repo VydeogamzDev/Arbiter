@@ -1,0 +1,26 @@
+# Zed. Sources: zed.dev/docs/ai/mcp, zed.dev/docs/configuring-zed (2026-09). settings.json is JSONC.
+schema_version: 1
+id: zed
+display_name: Zed
+profile_version: 1
+detect:
+  any_path_windows: ["{appdata}/Zed"]
+  any_path_macos: ["{xdg_config}/zed"]
+  any_path_linux: ["{xdg_config}/zed"]
+  any_command: ["zed"]
+  any_glob: []
+mcp:
+  file:
+    windows: "{appdata}/Zed/settings.json"
+    default: "{xdg_config}/zed/settings.json"
+  format: jsonc_named_entry
+  container: context_servers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}", env: {}}
+hooks: null                    # no hook system (proposal only)
+transcripts: null              # threads live in a compressed SQLite database
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["zed*"]

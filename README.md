@@ -21,6 +21,10 @@ arbiter doctor                     # shows what's verified for each client
 `arbiter setup` never changes permissions, approvals, sandbox or model settings. It never touches your other MCP servers, and it can't approve Codex hooks for you:
 - **Codex (desktop + CLI):** trust the Arbiter hooks once, in `/hooks` in the CLI or under Settings > Hooks in the desktop app. Until then Codex runs at tiers T1+T3, without the completion gate.
 - **Claude Code:** works right away (loopback `http` hooks, about 1 ms each). A Claude Code plugin is also available in [packaging/claude-code](packaging/claude-code/README.md).
+- **Also supported:** Cursor, VS Code (GitHub Copilot), Gemini CLI, Cline, Zed, OpenCode, Goose, Claude Desktop, Devin Desktop and legacy Windsurf.
+  - Setup edits each client's own config file, including JSONC and YAML, without dropping your comments.
+  - Cursor, VS Code and Gemini CLI also get hooks.
+  - `arbiter setup --clients zed,goose` limits setup to specific clients.
 - **Anything else with MCP:** `arbiter setup --print generic_mcp`.
 
 `arbiter uninstall` removes exactly what setup added. Files you haven't edited since are restored byte for byte.

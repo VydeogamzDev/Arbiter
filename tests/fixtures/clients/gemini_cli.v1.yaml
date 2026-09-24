@@ -1,0 +1,92 @@
+profile: gemini_cli
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- command
+- args
+client_names:
+- gemini-cli-mcp-client
+configs:
+  typical: |
+    {
+      "theme": "Default",
+      "mcpServers": {
+        "github": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ]
+        }
+      }
+    }
+  empty: ''
+  with_hooks: |
+    {
+      "hooks": {
+        "BeforeTool": [
+          {
+            "matcher": "write_file",
+            "hooks": [
+              {
+                "name": "lint",
+                "type": "command",
+                "command": "./lint.sh"
+              }
+            ]
+          }
+        ]
+      }
+    }
+hooks_configs: {}
+inbound:
+- native: BeforeAgent
+  payload:
+    hook_event_name: BeforeAgent
+    session_id: g-1
+    cwd: /work/repo
+    prompt: Refactor io
+  expect:
+    event_type: user_prompt
+    session: g-1
+    cwd: /work/repo
+    prompt: Refactor io
+- native: AfterAgent
+  payload:
+    hook_event_name: AfterAgent
+    session_id: g-1
+    prompt: Refactor io
+    prompt_response: I've refactored io.py. All tests pass.
+    stop_hook_active: false
+  expect:
+    event_type: stop
+    session: g-1
+    last_assistant_message: I've refactored io.py. All tests pass.
+- native: AfterTool
+  payload:
+    hook_event_name: AfterTool
+    session_id: g-1
+    tool_name: run_shell_command
+    tool_input:
+      command: pytest
+    tool_response:
+      output: 2 passed in 0.1s
+  expect:
+    event_type: post_tool
+    session: g-1
+outbound:
+- native: AfterAgent
+  response:
+    decision: block
+    reason: '[Arbiter] x'
+  expect:
+    decision: deny
+    reason: '[Arbiter] x'
+- native: BeforeAgent
+  response:
+    hookSpecificOutput:
+      additionalContext: ctx
+  expect:
+    hookSpecificOutput:
+      hookEventName: BeforeAgent
+      additionalContext: ctx

@@ -30,3 +30,4 @@ completion_claim:
   finish_tool: arbiter_finish_check
 effort_control: advisory
 native_tool_deferral: false
+mcp_client_names: ["codex-mcp-client", "codex_mcp_client", "codex*"]

@@ -10,12 +10,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def platform_name() -> str:
+    if sys.platform == "win32":
+        return "windows"
+    return "macos" if sys.platform == "darwin" else "linux"
+
+
 @dataclass(frozen=True)
 class ClientEnv:
     home: Path
     codex_home: Path
     claude_dir: Path
     claude_global_json: Path
+    # Per-OS roots for other clients' config (M5). Windows: %APPDATA% / %LOCALAPPDATA%;
+    # macOS: ~/Library/Application Support; Linux: $XDG_CONFIG_HOME / ~/.local/share.
+    appdata: Path | None = None
+    xdg_config: Path | None = None
+    localappdata: Path | None = None
+    platform: str = "windows"
 
     @property
     def codex_config(self) -> Path:
@@ -47,7 +59,26 @@ def current_env() -> ClientEnv:
     else:
         claude_dir = home / ".claude"
         claude_json = home / ".claude.json"
-    return ClientEnv(home=home, codex_home=codex_home, claude_dir=claude_dir, claude_global_json=claude_json)
+    # A sandbox (ARBITER_CLIENT_HOME) derives every root from its home, never from the real env.
+    sandboxed = bool(os.environ.get("ARBITER_CLIENT_HOME"))
+    plat = platform_name()
+
+    def env_dir(name: str, fallback: Path) -> Path:
+        v = None if sandboxed else os.environ.get(name)
+        return Path(v) if v else fallback
+
+    xdg = env_dir("XDG_CONFIG_HOME", home / ".config")
+    if plat == "windows":
+        appdata = env_dir("APPDATA", home / "AppData" / "Roaming")
+        local = env_dir("LOCALAPPDATA", home / "AppData" / "Local")
+    elif plat == "macos":
+        appdata = home / "Library" / "Application Support"
+        local = appdata
+    else:
+        appdata = xdg
+        local = env_dir("XDG_DATA_HOME", home / ".local" / "share")
+    return ClientEnv(home=home, codex_home=codex_home, claude_dir=claude_dir, claude_global_json=claude_json,
+                     appdata=appdata, xdg_config=xdg, localappdata=local, platform=plat)
 
 
 def arbiter_command(home: Path | None = None) -> list[str]:

@@ -1,0 +1,27 @@
+# Goose. Source: goose-docs.ai/docs/guides/config-files (2026-09). Block-style YAML under `extensions`.
+schema_version: 1
+id: goose
+display_name: Goose
+profile_version: 1
+detect:
+  any_path_windows: ["{appdata}/Block/goose"]
+  any_path_macos: ["{xdg_config}/goose"]
+  any_path_linux: ["{xdg_config}/goose"]
+  any_command: ["goose"]
+  any_glob: []
+mcp:
+  file:
+    windows: "{appdata}/Block/goose/config/config.yaml"
+    default: "{xdg_config}/goose/config.yaml"
+  format: yaml_named_entry
+  container: extensions
+  name: arbiter
+  entry: {type: stdio, name: arbiter, cmd: "{command}", args: "{args}", enabled: true, envs: {}, env_keys: [],
+          timeout: 300}
+hooks: null                    # plugin hooks exist, but plugin.json is not documented well enough yet
+transcripts: null              # sessions are stored in SQLite
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["goose*"]

@@ -10,8 +10,8 @@ Conventions:
 - **GPU**: only M7.2+ and research tracks R5/R6 need it.
 
 ```text
-Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (publish pending)
-       → M5 coverage → M6 indexes → M7 SemIf → M8 breakers → M9 advisory
+Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
+       → M5 coverage ✅ → M6 indexes → M7 SemIf → M8 breakers → M9 advisory
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
@@ -155,13 +155,20 @@ Stage 2 · Build steps 17–18 · Tier T1 (finish-check), T2 (stop hook) · Evid
 
 ---
 
-## M5 — Client coverage expansion
-Build step 19
+## M5 — Client coverage expansion ✅ Done 2026-09-24
+Build step 19 · Decision [0027](decisions/0027-m5-client-profiles.md)
 
 - **M5.1** Recorded-fixture contract tests for each profile version (`clients/fixtures/`).
 - **M5.2** Profiles for Cursor, Windsurf, VS Code/Copilot, Gemini CLI, Cline, Zed, OpenCode, Goose, and Claude Desktop. Each is verified with the tier set it actually supports, including completion-claim rules and the `native_tool_deferral` flag.
 
 **Exit:** every profiled MCP-capable client reaches at least T1, and profile drift is detected in fixture tests.
+
+**Result:** met in the sandbox (`tests/test_client_profiles.py`, `tests/test_text_config.py`).
+- Ten new profiles: `cursor`, `vscode`, `gemini_cli`, `cline`, `zed`, `opencode`, `goose`, `claude_desktop`, `devin_desktop` (Windsurf was renamed 2026-06-02), and `windsurf` (the legacy Cascade path).
+- Setup writes each client's own format, including JSONC and YAML, without dropping the user's comments.
+- Every profile reaches configured T1. T1 becomes verified once the client launches Arbiter's MCP server under a name its profile lists.
+- Hook dialects (T2, command transport) exist for Cursor (annotate only: its stop can't be held back), VS Code/Copilot and Gemini CLI.
+- Fixtures are derived from documented formats and should be replaced with real recordings as the clients are installed. T3 transcripts remain Codex and Claude Code only.
 
 ## M6 — Repository indexes
 Build step 20 · Tier T1

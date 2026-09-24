@@ -63,12 +63,32 @@ def stable_http_port(paths: ArbiterPaths) -> int:
 
 
 def print_snippet(profile: Profile, out: TextIO, home: Path | None = None) -> None:
+    from arbiter_agent.clients import mcp_entry
+
     cmd = arbiter_command(home)
+    fmt = str(profile.mcp.get("format"))
+    if fmt in mcp_entry.ENTRY_FORMATS:
+        entry = mcp_entry.render(profile.mcp.get("entry") or mcp_entry.DEFAULT_TEMPLATE, cmd)
+        target = profile.expand(profile.mcp.get("file"), current_env())
+        out.write(f"# {profile.display_name}: add this to {target or 'its MCP config'}\n")
+        out.write(mcp_entry.snippet(fmt, profile.mcp, entry))
+        return
     out.write(f"# {profile.display_name}: register Arbiter's MCP server manually\n")
     out.write("# JSON (mcpServers):\n")
     out.write(json.dumps({"mcpServers": {"arbiter": {"command": cmd[0], "args": cmd[1:]}}}, indent=2) + "\n")
     out.write("# TOML (e.g. Codex-style [mcp_servers.arbiter]):\n")
     out.write(f"[mcp_servers.arbiter]\ncommand = {json.dumps(cmd[0])}\nargs = {json.dumps(cmd[1:])}\n")
+
+
+def planned_tiers(p: Profile) -> str:
+    """Tiers setup can configure for a client: T1 MCP, T2 hooks, T3 transcripts (§4.4.3)."""
+    t1 = "T1" if p.mcp.get("format") != "print_only" else ""
+    t3 = "T3" if p.transcripts else ""
+    if not p.hooks:
+        return " ".join(x for x in (t1, t3) if x) or "manual"
+    if p.hooks.get("trust_required"):
+        return f"{' '.join(x for x in (t1, t3) if x)} now, T2 after you trust hooks".strip()
+    return " ".join(x for x in (t1, "T2", t3) if x)
 
 
 def _set_scope(paths: ArbiterPaths, scope: str) -> None:
@@ -97,8 +117,7 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
     else:
         out.write("Detected clients:\n")
         for p, hits in detected:
-            tiers = "T1 T2 T3" if not (p.hooks or {}).get("trust_required") else "T1 T3 now, T2 after you trust hooks"
-            out.write(f"  - {p.display_name:24s} ({hits[0]})  -> {tiers}\n")
+            out.write(f"  - {p.display_name:24s} ({hits[0]})  -> {planned_tiers(p)}\n")
         if not detected:
             out.write("  (none found; use --clients or `arbiter setup --print generic_mcp`)\n")
             return 1
@@ -141,6 +160,11 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
     for line in results:
         out.write(f"  {line}\n")
     problems = sum(1 for line in results if line.startswith(("skipped", "FAILED")))
+    for c in changes:   # files setup couldn't edit safely: show what to paste instead
+        prof = next((p for p in chosen if p.id == c.client), None)
+        if c.error and prof is not None and c.kind in ("json_named_entry", "jsonc_named_entry", "yaml_named_entry"):
+            out.write(f"\nManual step for {prof.display_name} ({c.error}):\n")
+            print_snippet(prof, out, paths.root)
 
     scope = opts.scope
     if scope is None and not opts.yes:

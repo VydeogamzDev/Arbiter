@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -26,12 +27,25 @@ OBS_THROTTLE_S = 60.0
 PROBE_INTERVAL_S = 600.0
 
 
+@functools.lru_cache(maxsize=1)
+def _profiles() -> tuple[Any, ...]:
+    from arbiter_agent.clients.registry import load_registry
+
+    return tuple(load_registry().profiles.values())
+
+
 def client_from_info(name: str | None) -> str:
-    n = (name or "").lower()
-    if "claude" in n:
-        return "claude_code"
-    if "codex" in n:
+    """Map an MCP ``clientInfo.name`` to a profile id (profiles declare their names)."""
+    n = (name or "").lower().strip()
+    if not n:
+        return "generic"
+    for p in _profiles():
+        if p.matches_client_name(n):
+            return str(p.id)
+    if "codex" in n:           # fallbacks for unknown variants of the two primary clients
         return "codex"
+    if "claude-code" in n or "claude_code" in n or n == "claude code":
+        return "claude_code"
     return "generic"
 
 

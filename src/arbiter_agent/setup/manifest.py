@@ -55,11 +55,15 @@ class Manifest:
     def active(self, client: str | None = None) -> list[InstallRecord]:
         return [r for r in self.records if r.removed_at is None and (client is None or r.client == client)]
 
-    def find(self, client: str, path: str) -> InstallRecord | None:
+    def find(self, client: str, path: str, kind: str | None = None) -> InstallRecord | None:
         for r in self.active(client):
-            if r.path == path:
+            if r.path == path and (kind is None or r.kind == kind):
                 return r
         return None
+
+    def for_path(self, path: str) -> list[InstallRecord]:
+        """Active records for one file, oldest first (several kinds can share a file)."""
+        return sorted((r for r in self.active() if r.path == path), key=lambda r: r.installed_at)
 
     def installed_clients(self) -> list[str]:
         return sorted({r.client for r in self.active()})
@@ -67,10 +71,12 @@ class Manifest:
     def upsert(self, client: str, path: str, kind: str, backup: str | None, created: bool, written_sha256: str,
                version: str, detail: dict[str, Any]) -> InstallRecord:
         now = time.time()
-        rec = self.find(client, path)
+        rec = self.find(client, path, kind)
         if rec is None:
             rec = InstallRecord(client, path, kind, backup, created, written_sha256, now, now, version, detail)
             self.records.append(rec)
         else:  # keep the *original* backup so uninstall can restore pre-Arbiter bytes
             rec.written_sha256, rec.updated_at, rec.arbiter_version, rec.detail = written_sha256, now, version, detail
+        for other in self.for_path(path):   # every record for the file knows Arbiter's latest bytes
+            other.written_sha256 = written_sha256
         return rec

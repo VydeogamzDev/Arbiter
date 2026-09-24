@@ -1,0 +1,27 @@
+profile: goose
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- type
+- name
+- cmd
+- args
+- enabled
+- envs
+- env_keys
+- timeout
+client_names:
+- goose
+configs:
+  typical: |
+    # goose
+    GOOSE_PROVIDER: anthropic
+    GOOSE_MODEL: claude-opus-5-5
+    extensions:
+      developer:
+        enabled: true
+        name: developer
+        type: builtin
+  no_extensions: |
+    GOOSE_PROVIDER: openai
+  empty: ''

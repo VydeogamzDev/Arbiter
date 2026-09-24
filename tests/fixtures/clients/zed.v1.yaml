@@ -1,0 +1,24 @@
+profile: zed
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- command
+- args
+- env
+client_names:
+- Zed
+configs:
+  typical: |
+    // Zed settings
+    {
+      "theme": "One Dark",
+      "buffer_font_size": 15,
+    }
+  with_servers: |
+    {
+      "context_servers": {
+        // mine
+        "github": {"command": "npx", "args": []}
+      }
+    }
+  empty: ''

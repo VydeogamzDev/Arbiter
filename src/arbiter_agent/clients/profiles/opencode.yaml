@@ -1,0 +1,23 @@
+# OpenCode. Sources: opencode.ai/docs/config, /docs/mcp-servers (2026-09). `command` is one array
+# (program + args); JSON or JSONC; ~/.config/opencode on every OS (Windows: %USERPROFILE%\.config).
+schema_version: 1
+id: opencode
+display_name: OpenCode
+profile_version: 1
+detect:
+  any_path: ["{home}/.config/opencode"]
+  any_command: ["opencode"]
+  any_glob: []
+mcp:
+  file: ["{home}/.config/opencode/opencode.json", "{home}/.config/opencode/opencode.jsonc"]
+  format: jsonc_named_entry
+  container: mcp
+  name: arbiter
+  entry: {type: local, command: "{argv}", enabled: true}
+hooks: null                    # JS/TS plugins only
+transcripts: null
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["opencode*"]

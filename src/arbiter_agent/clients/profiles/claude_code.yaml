@@ -28,3 +28,4 @@ completion_claim:
   finish_tool: arbiter_finish_check
 effort_control: advisory
 native_tool_deferral: true   # Claude Code already loads MCP tool schemas on demand (decision 0006)
+mcp_client_names: ["claude-code", "claude code"]

@@ -1,0 +1,24 @@
+profile: opencode
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- type
+- command
+- enabled
+client_names:
+- opencode
+configs:
+  typical: |
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "model": "anthropic/claude-opus-5-5"
+    }
+  with_mcp: |
+    {
+      "$schema": "https://opencode.ai/config.json",
+      // servers
+      "mcp": {
+        "github": {"type": "local", "command": ["npx", "-y", "gh-mcp"], "enabled": true},
+      },
+    }
+  empty: ''

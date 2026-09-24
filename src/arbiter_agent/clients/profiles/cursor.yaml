@@ -1,0 +1,30 @@
+# Cursor (IDE + `agent` CLI). Sources: cursor.com/docs/context/mcp, /docs/agent/hooks (2026-09).
+# The `agent` CLI reportedly fires no hooks (IDE sessions only), so T2 is verified per observation.
+schema_version: 1
+id: cursor
+display_name: Cursor
+profile_version: 1
+detect:
+  any_path: ["{home}/.cursor"]
+  any_command: ["cursor"]
+  any_glob: ["{localappdata}/Programs/cursor"]
+mcp:
+  file: "{home}/.cursor/mcp.json"
+  format: json_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {type: stdio, command: "{command}", args: "{args}"}
+hooks:
+  file: "{home}/.cursor/hooks.json"
+  format: cursor_hooks_v1
+  transport: command
+  trust_required: false
+  stop_blockable: false        # stop hooks can only queue a follow-up turn: the gate only annotates
+transcripts: null              # agent transcripts exist but are undocumented (decision 0027)
+tools:
+  shell: ["run_terminal_cmd", "Shell", "terminal"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: true     # dynamic context discovery: tool names in context, schemas on demand
+mcp_client_names: ["cursor*"]

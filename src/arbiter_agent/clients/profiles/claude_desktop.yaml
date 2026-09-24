@@ -1,0 +1,30 @@
+# Claude Desktop (chat). Source: modelcontextprotocol.io/docs/develop/connect-local-servers (2026-09).
+# The Windows Store (MSIX) build reads a virtualized copy under LocalCache (anthropics/claude-code#26073);
+# the first candidate whose parent directory exists wins. Linux config path is unconfirmed: print-only.
+schema_version: 1
+id: claude_desktop
+display_name: Claude Desktop
+profile_version: 1
+detect:
+  any_path_windows: ["{appdata}/Claude", "{localappdata}/Packages/Claude_pzs8sxrjxfjjc"]
+  any_path_macos: ["{appdata}/Claude"]
+  any_command: []
+  any_glob: []
+mcp:
+  file:
+    windows: ["{localappdata}/Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude/claude_desktop_config.json",
+              "{appdata}/Claude/claude_desktop_config.json"]
+    macos: "{appdata}/Claude/claude_desktop_config.json"
+    linux: null
+  format: json_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}"}
+  live_file: true
+hooks: null                    # chat has no hooks (the Code tab uses Claude Code settings)
+transcripts: null
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["claude-ai*", "claude desktop*"]

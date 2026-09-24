@@ -22,10 +22,11 @@ from arbiter_agent.telemetry import errors as err
 from arbiter_agent.telemetry.runner_parsers import detect, fingerprint
 
 SHELL_TOOLS = {"bash", "powershell", "exec_command", "exec", "shell", "local_shell", "container.exec", "run_command",
-               "terminal", "execute_command"}
+               "terminal", "execute_command", "run_terminal_cmd", "run_in_terminal", "runinterminal",
+               "run_shell_command"}
 EDIT_TOOLS = {"edit", "write", "multiedit", "notebookedit", "apply_patch", "str_replace_based_edit_tool",
               "str_replace_editor", "create_file", "write_file", "edit_file", "replace_in_file",
-              "insert_edit_into_file"}
+              "insert_edit_into_file", "replace_string_in_file", "search_replace", "multi_replace_string_in_file"}
 PATCH_PATH = re.compile(r"\*\*\* (?:Update|Add|Delete) File: ([^\n\\\"]+)")
 MOVE_PATH = re.compile(r"\*\*\* Move to: ([^\n\\\"]+)")
 SHELL_WRITE = re.compile(

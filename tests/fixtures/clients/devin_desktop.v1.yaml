@@ -1,0 +1,19 @@
+profile: devin_desktop
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- command
+- args
+- env
+- disabled
+client_names:
+- devin
+configs:
+  typical: |
+    {
+      // Devin CLI servers
+      "mcpServers": {
+        "github": {"command": "npx"}
+      }
+    }
+  empty: ''

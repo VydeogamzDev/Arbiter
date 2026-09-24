@@ -570,7 +570,8 @@ class SessionEngine:
         self.writer.run(job, timeout=5)
 
     # ------------------------------------------------------------------ gate (M4)
-    def after_hook(self, client: str, payload: Any, event_hint: str | None, deadline: Deadline) -> dict[str, Any]:
+    def after_hook(self, client: str, payload: Any, event_hint: str | None, deadline: Deadline,
+                   can_block: bool = True) -> dict[str, Any]:
         """Decision for a just-logged hook: the gate on Stop, optional status on prompt/start."""
         if not isinstance(payload, dict):
             return {}
@@ -581,10 +582,11 @@ class SessionEngine:
             return {}
         sid = f"{client}:{native}"
         if etype == "stop":
-            return self.on_stop(sid, payload, deadline)
+            return self.on_stop(sid, payload, deadline, can_block=can_block)
         return self.on_prompt_hook(sid, str(name), deadline)
 
-    def on_stop(self, sid: str, payload: dict[str, Any], deadline: Deadline) -> dict[str, Any]:
+    def on_stop(self, sid: str, payload: dict[str, Any], deadline: Deadline,
+                can_block: bool = True) -> dict[str, Any]:
         """Stop-hook gate. Returns the client response ({} unless block mode blocks)."""
         if not self.enabled("completion_gate"):
             return {}
@@ -601,8 +603,11 @@ class SessionEngine:
             if st is None:
                 return {}
             mode = str(st["flags"].get("gate_mode") or mode)
+            if not can_block:
+                mode = "annotate"       # this client can't hold back a stop (e.g. Cursor): record only
             fc = st["flags"].get("finish_check_ordinal")
-            claim = claim_detection.classify(payload.get("last_assistant_message"),
+            message = payload.get("last_assistant_message") or self._last_agent_response(sid)
+            claim = claim_detection.classify(message,
                                              finish_check_called=fc is not None and fc == st["intent_count"])
             if not claim.gated and not self.config.get("completion.record_non_claims", False):
                 self._note_verdict(sid, claim.claim, "not_gated")
@@ -624,6 +629,25 @@ class SessionEngine:
             return {}
         finally:
             self.breakers.hook_latency.record_latency((time.monotonic() - t0) * 1000.0)
+
+    def _last_agent_response(self, sid: str) -> str | None:
+        """Final assistant text for clients whose stop payload lacks it (Cursor sends it on a separate
+        afterAgentResponse event, normalized to ``agent_response``)."""
+        rc = self._read()
+        try:
+            row = rc.execute("SELECT b.data FROM event_log e JOIN blob b ON b.hash = e.payload_pointer "
+                             "WHERE e.session_id = ? AND e.event_type = 'agent_response' ORDER BY e.seq DESC LIMIT 1",
+                             (sid,)).fetchone()
+        finally:
+            rc.close()
+        if not row:
+            return None
+        try:
+            data = json.loads(bytes(row[0]).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
+        text = data.get("last_assistant_message") or data.get("text") if isinstance(data, dict) else None
+        return str(text) if text else None
 
     def _note_verdict(self, sid: str, claim: str, verdict: str) -> None:
         def job(conn: sqlite3.Connection) -> None:

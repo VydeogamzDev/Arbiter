@@ -1,0 +1,23 @@
+# Windsurf / legacy Cascade config (~/.codeium/windsurf). Current third-party integrations say legacy
+# Cascade still reads it (decision 0027); new installs use the devin_desktop profile.
+schema_version: 1
+id: windsurf
+display_name: Windsurf (legacy Cascade)
+profile_version: 1
+detect:
+  any_path: ["{home}/.codeium/windsurf"]
+  any_command: ["windsurf", "surf"]
+  any_glob: []
+mcp:
+  file: "{home}/.codeium/windsurf/mcp_config.json"
+  format: json_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}", env: {}, disabled: false}
+hooks: null                    # Cascade hooks can neither block a turn end nor add context
+transcripts: null
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["windsurf*", "cascade*"]

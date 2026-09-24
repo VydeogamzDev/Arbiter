@@ -1,0 +1,30 @@
+# Gemini CLI. Sources: geminicli.com/docs/tools/mcp-server, /docs/hooks, /docs/hooks/reference (2026-09).
+# AfterAgent with decision "deny" makes Gemini retry the turn with the reason (a bounded block).
+schema_version: 1
+id: gemini_cli
+display_name: Gemini CLI
+profile_version: 1
+detect:
+  any_path: ["{home}/.gemini"]
+  any_command: ["gemini"]
+  any_glob: []
+mcp:
+  file: "{home}/.gemini/settings.json"
+  format: jsonc_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}"}
+hooks:
+  file: "{home}/.gemini/settings.json"
+  format: gemini_hook_groups
+  transport: command
+  trust_required: false
+  stop_blockable: true
+transcripts: null              # ~/.gemini/tmp/<hash>/chats/session-*.jsonl: parser not built yet
+tools:
+  shell: ["run_shell_command"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["gemini*"]

@@ -1,0 +1,28 @@
+# Devin Desktop (formerly Windsurf, renamed 2026-06-02). Source: docs.devin.ai/cli/extensibility/mcp/
+# configuration (2026-09). Devin Local reads the Devin CLI config (JSONC). Devin Local also loads
+# ~/.claude/settings.json hooks, so Claude Code's http hooks fire there (attributed to claude_code).
+schema_version: 1
+id: devin_desktop
+display_name: Devin Desktop
+profile_version: 1
+detect:
+  any_path_windows: ["{appdata}/devin", "{localappdata}/devin"]
+  any_path_macos: ["{xdg_config}/devin", "{appdata}/Devin"]
+  any_path_linux: ["{xdg_config}/devin"]
+  any_command: ["devin-desktop", "devin"]
+  any_glob: []
+mcp:
+  file:
+    windows: "{appdata}/devin/mcp_config.json"
+    default: "{xdg_config}/devin/mcp_config.json"
+  format: jsonc_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}", env: {}, disabled: false}
+hooks: null
+transcripts: null
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["devin*"]

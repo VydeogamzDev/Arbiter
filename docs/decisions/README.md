@@ -57,3 +57,4 @@ What this makes easier, harder, or rules out.
 | [0024](0024-m4-gate-verdict-rules.md) | M4 gate verdict rules: claims, low-strength and integrity conditions, breakers | Accepted |
 | [0025](0025-v0-1-packaging-and-launch.md) | v0.1 packaging, Claude Code plugin, client-home env for the daemon launcher | Accepted |
 | [0026](0026-sensor-backends-model-tiers-and-fine-tuning.md) | Semantic sensor: pluggable backends, GLiNER2.5-Decide encoder tier 0, decoder tiers by VRAM (JevK5 / K2 Horizon 7B), fine-tuned adapters | Accepted (plan) |
+| [0027](0027-m5-client-profiles.md) | M5 client coverage: ten new profiles, JSONC/YAML minimal-edit writers, hook dialects (Cursor, VS Code, Gemini) | Accepted |

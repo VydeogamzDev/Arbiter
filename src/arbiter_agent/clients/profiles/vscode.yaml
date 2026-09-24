@@ -1,0 +1,30 @@
+# VS Code + GitHub Copilot agent mode. Sources: code.visualstudio.com/docs/copilot/customization/mcp-servers,
+# /docs/agents/reference/hooks-reference (2026-09). The user mcp.json lives in the profile folder (Code/User).
+schema_version: 1
+id: vscode
+display_name: VS Code (GitHub Copilot)
+profile_version: 1
+detect:
+  any_path: ["{appdata}/Code/User"]
+  any_command: ["code"]
+  any_glob: []
+mcp:
+  file: "{appdata}/Code/User/mcp.json"
+  format: jsonc_named_entry
+  container: servers
+  name: arbiter
+  entry: {type: stdio, command: "{command}", args: "{args}"}
+hooks:
+  file: "{home}/.copilot/hooks/arbiter.json"   # Arbiter owns this whole file
+  format: vscode_hooks_file
+  transport: command
+  trust_required: false
+  stop_blockable: true
+transcripts: null
+tools:
+  shell: ["run_in_terminal", "runInTerminal"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false    # groups tools past a threshold ("virtual tools"); schemas are not deferred
+mcp_client_names: ["visual studio code*", "vscode*"]

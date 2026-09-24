@@ -1,0 +1,24 @@
+# Cline 4.x (VS Code extension). Source: cline/cline core/storage/disk.ts (2026-09). Config moved to
+# ~/.cline/data/settings/ on every OS; legacy globalStorage files are migrated on startup.
+schema_version: 1
+id: cline
+display_name: Cline
+profile_version: 1
+detect:
+  any_path: ["{home}/.cline", "{appdata}/Code/User/globalStorage/saoudrizwan.claude-dev"]
+  any_command: []
+  any_glob: []
+mcp:
+  file: "{home}/.cline/data/settings/cline_mcp_settings.json"
+  format: json_named_entry
+  container: mcpServers
+  name: arbiter
+  entry: {command: "{command}", args: "{args}", disabled: false, autoApprove: []}
+  live_file: true
+hooks: null                    # one script per event; no Stop event yet ("TaskComplete coming soon")
+transcripts: null
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false
+mcp_client_names: ["cline*"]

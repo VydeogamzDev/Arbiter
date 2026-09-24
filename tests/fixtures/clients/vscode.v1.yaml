@@ -1,0 +1,71 @@
+profile: vscode
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- type
+- command
+- args
+client_names:
+- Visual Studio Code
+configs:
+  typical: |
+    {
+      "servers": {
+        "github": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ]
+        }
+      },
+      "inputs": []
+    }
+  empty: ''
+  comments: |
+    // VS Code MCP servers
+    {
+      "servers": {
+        // GitHub
+        "github": {"type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]},
+      },
+    }
+hooks_configs:
+  absent: null
+inbound:
+- native: UserPromptSubmit
+  payload:
+    hook_event_name: UserPromptSubmit
+    session_id: v-1
+    cwd: C:/work/repo
+    prompt: Add a flag
+    timestamp: '2026-09-24T10:00:00Z'
+  expect:
+    event_type: user_prompt
+    session: v-1
+    cwd: C:/work/repo
+    prompt: Add a flag
+- native: Stop
+  payload:
+    hook_event_name: Stop
+    session_id: v-1
+    stop_hook_active: false
+  expect:
+    event_type: stop
+    session: v-1
+outbound:
+- native: Stop
+  response:
+    decision: block
+    reason: '[Arbiter] x'
+  expect:
+    hookSpecificOutput:
+      hookEventName: Stop
+      decision: block
+      reason: '[Arbiter] x'
+- native: UserPromptSubmit
+  response:
+    hookSpecificOutput:
+      additionalContext: ctx
+  expect: {}

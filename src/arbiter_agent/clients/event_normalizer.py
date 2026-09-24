@@ -30,6 +30,7 @@ HOOK_EVENTS: dict[str, str] = {
     "PostCompact": "post_compact",
     "Interrupt": "interrupt",
     "Notification": "notification",
+    "AgentResponse": "agent_response",      # Cursor afterAgentResponse (final assistant text)
 }
 _CAMEL = {k[0].lower() + k[1:]: k for k in HOOK_EVENTS}  # app-server style names (e.g. "stop")
 
@@ -48,12 +49,15 @@ CLIENTS: dict[str, ClientSpec] = {
     "codex": ClientSpec("codex", 1, "turn_id", ("Bash", "exec_command", "exec", "shell")),
     "claude_code": ClientSpec("claude_code", 1, "prompt_id", ("Bash", "PowerShell")),
     "fake": ClientSpec("fake", 1, "turn_id", ("Bash",)),
+    "cursor": ClientSpec("cursor", 1, "turn_id", ("run_terminal_cmd", "Shell", "terminal")),
+    "vscode": ClientSpec("vscode", 1, "turn_id", ("run_in_terminal", "runInTerminal")),
+    "gemini_cli": ClientSpec("gemini_cli", 1, "turn_id", ("run_shell_command",)),
     "generic": ClientSpec("generic", 1, "turn_id", ("Bash", "shell")),
 }
 
 # Fields kept in the non-sensitive attrs column (used by replay; never contains user text).
 ATTR_FIELDS = ("tool_use_id", "tool_name", "stop_hook_active", "source", "reason", "trigger", "agent_type",
-               "permission_mode", "model")
+               "permission_mode", "model", "native_event")
 
 
 class NormalizationError(ValueError):

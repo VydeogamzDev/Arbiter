@@ -16,6 +16,7 @@ from pathlib import Path
 
 from arbiter_agent import __version__
 from arbiter_agent.clients import config_merge as cm
+from arbiter_agent.clients import mcp_entry
 from arbiter_agent.clients.claude_code import hooks as claude_hooks
 from arbiter_agent.clients.client_env import ClientEnv
 from arbiter_agent.clients.codex import hooks as codex_hooks
@@ -97,7 +98,44 @@ def plan_for(profile: Profile, env: ClientEnv, command: list[str], *, port: int,
                 "claude_code", settings, "json_hook_groups", f"add {len(groups)} Arbiter http hooks",
                 lambda before: cm.json_transform(before, settings, cm.upsert_hook_groups(groups, claude_hooks.is_ours)),
                 mask=[hook_token], detail={"events": sorted(groups), "transport": "http", "port": port}))
+    elif profile.mcp.get("format") in mcp_entry.ENTRY_FORMATS:
+        changes += generic_mcp_changes(profile, env, command)
+        changes += dialect_hook_changes(profile, env, command)
     return changes
+
+
+def dialect_hook_changes(profile: Profile, env: ClientEnv, command: list[str]) -> list[FileChange]:
+    """M5 hook dialects (Cursor, VS Code, Gemini CLI): command-transport hooks."""
+    from arbiter_agent.clients.hook_dialects import DIALECTS
+
+    d = DIALECTS.get(profile.id)
+    if d is None or not profile.hooks or profile.hooks.get("format") != d.hook_format:
+        return []
+    target = profile.expand(profile.hooks.get("file"), env)
+    if target is None:
+        return []
+    return [FileChange(
+        profile.id, target, d.hook_format, f"add {len(d.events)} Arbiter hooks (command)",
+        lambda before: d.upsert(before, target, command),
+        detail={"events": list(d.events), "transport": "command"})]
+
+
+def generic_mcp_changes(profile: Profile, env: ClientEnv, command: list[str]) -> list[FileChange]:
+    """M5 profiles: the MCP entry described by the profile (file per platform, container, template)."""
+    spec = profile.mcp
+    fmt = str(spec["format"])
+    target = profile.expand(spec.get("file"), env)
+    if target is None:
+        return []
+    entry = mcp_entry.render(spec.get("entry") or mcp_entry.DEFAULT_TEMPLATE, command)
+    keys = mcp_entry.container_path(spec)
+    name = str(spec.get("name", "arbiter"))
+    where = ".".join(keys + [name])
+    return [FileChange(
+        profile.id, target, fmt, f"register the Arbiter MCP server ({where})",
+        lambda before: mcp_entry.upsert(fmt, before, target, spec, entry),
+        live=bool(spec.get("live_file")),
+        detail={"container_path": keys, "name": name, "format": fmt})]
 
 
 def _backup(paths: ArbiterPaths, change: FileChange, stamp: str) -> str | None:
@@ -114,6 +152,12 @@ def _validate(change: FileChange, data: bytes) -> None:
         if not cm.toml_block_present(data):
             raise cm.ConfigParseError(f"{change.path}: Arbiter block missing after write")
         cm._parse_toml(data.decode("utf-8"), change.path)
+    elif change.kind in mcp_entry.ENTRY_FORMATS:
+        mcp_entry.validate(change.kind, data, change.path)
+    elif change.kind == "gemini_hook_groups":
+        from arbiter_agent.clients import text_config
+
+        text_config.load_jsonc(data, change.path)
     else:
         cm.load_json(data, change.path)
 
@@ -126,12 +170,21 @@ def apply_changes(paths: ArbiterPaths, changes: list[FileChange], manifest: Mani
         if ch.error:
             out.append(f"skipped {ch.path}: {ch.error}")
             continue
-        existing = manifest.find(ch.client, str(ch.path))
+        existing = manifest.find(ch.client, str(ch.path), ch.kind)
         if ch.unchanged and existing is not None:
             out.append(f"unchanged {ch.path}")
             continue
-        backup = existing.backup if existing else _backup(paths, ch, stamp)
-        created = existing.created if existing else ch.before is None
+        same_file = manifest.for_path(str(ch.path))       # another change may have written this file already
+        first = same_file[0] if same_file else None
+        backup = first.backup if first else _backup(paths, ch, stamp)
+        created = first.created if first else ch.before is None
+        current = cm.read_bytes(ch.path)
+        if current != ch.before:                            # recompute on top of the file as it is now
+            try:
+                ch.before, ch.after = current, ch.compute(current)
+            except (cm.ConfigConflict, cm.ConfigParseError, OSError) as exc:
+                out.append(f"skipped {ch.path}: {exc}")
+                continue
         try:
             if ch.live:
                 _, written = cm.write_with_recheck(ch.path, ch.compute)

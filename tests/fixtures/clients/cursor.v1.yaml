@@ -1,0 +1,96 @@
+profile: cursor
+profile_version: 1
+source: derived from the client's documented format (2026-09); replace with real recordings as clients are installed
+entry_keys:
+- type
+- command
+- args
+client_names:
+- cursor-vscode
+- Cursor
+configs:
+  typical: |
+    {
+      "mcpServers": {
+        "github": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ]
+        }
+      }
+    }
+  empty: ''
+  other_keys: |
+    {
+      "mcpServers": {},
+      "someSetting": true
+    }
+hooks_configs:
+  typical: |
+    {
+      "version": 1,
+      "hooks": {
+        "stop": [
+          {
+            "command": "./audit.sh"
+          }
+        ]
+      }
+    }
+inbound:
+- native: beforeSubmitPrompt
+  payload:
+    hook_event_name: beforeSubmitPrompt
+    conversation_id: c-1
+    generation_id: g-1
+    workspace_roots:
+    - /work/repo
+    prompt: Fix the parser bug
+  expect:
+    event_type: user_prompt
+    session: c-1
+    cwd: /work/repo
+    prompt: Fix the parser bug
+- native: afterAgentResponse
+  payload:
+    hook_event_name: afterAgentResponse
+    conversation_id: c-1
+    text: Done.
+  expect:
+    event_type: agent_response
+    session: c-1
+    last_assistant_message: Done.
+- native: postToolUse
+  payload:
+    hook_event_name: postToolUse
+    conversation_id: c-1
+    tool_name: run_terminal_cmd
+    tool_input:
+      command: pytest -q
+    tool_output: 3 passed in 0.1s
+  expect:
+    event_type: post_tool
+    session: c-1
+    tool_response: 3 passed in 0.1s
+- native: stop
+  payload:
+    hook_event_name: stop
+    conversation_id: c-1
+    status: completed
+  expect:
+    event_type: stop
+    session: c-1
+outbound:
+- native: stop
+  response:
+    decision: block
+    reason: '[Arbiter] x'
+  expect: {}
+- native: sessionStart
+  response:
+    hookSpecificOutput:
+      additionalContext: ctx
+  expect:
+    additional_context: ctx

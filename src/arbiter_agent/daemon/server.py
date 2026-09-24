@@ -317,11 +317,18 @@ class Daemon:
         if not self.flags.enabled("event_log"):
             return {"status": "disabled", "response": {}}
         deadline = Deadline(max(0.1, float(self.config.get("hooks.gating_deadline_ms", 1500)) / 1000.0 * 0.8))
+        from arbiter_agent.clients.hook_dialects import DIALECTS, adapt_inbound, adapt_outbound
+
+        native_event = (payload.get("hook_event_name") if isinstance(payload, dict) else None) or event_hint
+        payload, event_hint = adapt_inbound(client, payload, event_hint)   # M5 dialects -> canonical shape
         res = self.ingestor.ingest_hook(client, payload, surface=surface, event_hint=event_hint, channel=channel,
                                         wait=self._gating_wait())
         response: dict[str, Any] = {}
         if res.status in ("stored", "duplicate", "pending") and not self.degraded:
-            response = self.engine.after_hook(client, payload, event_hint, deadline)
+            dialect = DIALECTS.get(client)
+            response = self.engine.after_hook(client, payload, event_hint, deadline,
+                                              can_block=dialect.can_block_stop if dialect else True)
+            response = adapt_outbound(client, native_event, response)
         return {**res.to_dict(), "response": response}
 
     def _on_http_hook(self, client: str, event: str, body: dict[str, Any]) -> dict[str, Any]:
