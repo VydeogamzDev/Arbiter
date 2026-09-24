@@ -31,10 +31,14 @@ def question(family: str, sections: list[StateSection]) -> Question:
 
 
 class ShadowHarness:
-    def __init__(self, service: SemIfService, writer: Any) -> None:
+    def __init__(self, service: SemIfService, writer: Any, *, flags: Any = None, shedder: Any = None,
+                 budgets: Any = None) -> None:
         self.service = service
         self.writer = writer
-        self.stats = {"queued": 0, "shed": 0, "logged": 0}
+        self.flags = flags
+        self.shedder = shedder
+        self.budgets = budgets
+        self.stats = {"queued": 0, "shed": 0, "logged": 0, "skipped": 0}
 
     def on_decision(self, sid: str, kind: str, info: dict[str, Any]) -> None:
         """Engine listener: kind is ``prompt`` or ``stop``. Enqueue only."""
@@ -47,6 +51,11 @@ class ShadowHarness:
             self._ask(sid, question("completion_claim", sections), str(info.get("claim")))
 
     def _ask(self, sid: str, q: Question, rule: str) -> None:
+        if (self.flags is not None and not self.flags.enabled("semif")) or \
+                (self.shedder is not None and not self.shedder.allow("background")) or \
+                (self.budgets is not None and not self.budgets.charge(sid, "sensor_calls_per_turn")):
+            self.stats["skipped"] += 1
+            return
         qhash = h(q.state_text() + q.criterion)
         fut = self.service.submit(q, callback=lambda j: self._log(sid, q, qhash, rule, j))
         if fut is None:

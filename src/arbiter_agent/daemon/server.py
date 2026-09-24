@@ -103,22 +103,35 @@ class Daemon:
         self.ingestor.observers.append(self.clients.on_event)
         from arbiter_agent.completion.breakers import Breakers
         from arbiter_agent.daemon.session_engine import SessionEngine
+        from arbiter_agent.policy.circuit_breaker import BreakerBoard
+        from arbiter_agent.ui import overrides as overrides_mod
 
+        self.board = BreakerBoard(flags=self.flags, on_event=self._breaker_event,
+                                  overrides=dict(self.config.get("policy.breakers") or {}))
         self.breakers = Breakers(float(self.config.get("hooks.gating_p95_budget_ms", 300)),
-                                 enabled=self.flags.enabled("circuit_breakers"))
+                                 enabled=self.flags.enabled("circuit_breakers"), board=self.board)
         self.engine = SessionEngine(db=self.paths.db, writer=self.writer, keyer=self.ingestor.keyer,
                                     config=self.config, reducer=self.reducer, breakers=self.breakers,
                                     flags=self.flags)
         self.ingestor.observers.append(self.engine.wake)
+        self.overrides = overrides_mod.Overrides(self.paths.db, self.writer, self.flags, self.board,
+                                                 audit=self.engine.audit_global)
+        if not self.degraded:
+            self.overrides.load()
+            self.board.restore(overrides_mod.load_breakers(self.paths.db))
+        self.engine.overrides = self.overrides
         self.sensor = None
         self.shadow = None
         if self.flags.enabled("semif"):
             from arbiter_agent.semif.service import SemIfService
             from arbiter_agent.semif.shadow import ShadowHarness
 
-            self.sensor = SemIfService.from_config(self.config)
+            self.sensor = SemIfService.from_config(self.config, board=self.board)
             if self.config.get("semif.shadow", True):
-                self.shadow = ShadowHarness(self.sensor, self.writer)
+                sensor = self.sensor
+                self.shadow = ShadowHarness(sensor, self.writer, flags=self.flags, shedder=self.engine.shedder,
+                                            budgets=self.engine.budgets)
+                self.engine.shedder.sources["semif"] = lambda: (sensor.queue.backlog, sensor.queue.capacity)
                 self.engine.decision_listeners.append(self.shadow.on_decision)
         self.retrieval = None
         if self.flags.enabled("repo_index"):
@@ -200,6 +213,7 @@ class Daemon:
                 return
             self.connections += 1
             hello_done = False
+            component: str | None = None
             while not self._stop.is_set():
                 try:
                     raw = conn.recv_bytes(protocol.MAX_FRAME)
@@ -226,9 +240,10 @@ class Daemon:
                         self.passthrough_hellos += 1
                         break
                     hello_done = True
+                    component = str(params.get("component") or "unknown")
                     continue
                 try:
-                    result = self.dispatch(str(method), msg.get("params") or {})
+                    result = self.dispatch(str(method), msg.get("params") or {}, component)
                     reply = {"id": mid, "ok": True, "result": result}
                 except Exception as exc:
                     log.exception("request failed", extra={"fields": {"method": method}})
@@ -244,7 +259,7 @@ class Daemon:
                 pass
             self._conn_sem.release()
 
-    def dispatch(self, method: str, params: dict[str, Any]) -> Any:
+    def dispatch(self, method: str, params: dict[str, Any], component: str | None = None) -> Any:
         if method == "ping":
             return {"pong": True, "t": time.time()}
         if method == "status":
@@ -279,15 +294,55 @@ class Daemon:
             return self.engine_call(method, params)
         if method == "retrieve":
             return self.retrieve(params)
+        if method in ("control_list", "control_set", "control_clear", "breaker_reset"):
+            return self.control(method, params, component)
         if method == "sensor_status":
             return {"sensor": self.sensor.health() if self.sensor else None,
                     "shadow": self.shadow.stats if self.shadow else None}
         raise ValueError(f"unknown method '{method}'")
 
+    # ------------------------------------------------------------------ policy (M8)
+    def _breaker_event(self, event: str, b: Any, reason: str) -> None:
+        engine = getattr(self, "engine", None)
+        if engine is not None:
+            engine.audit_global("internal.breaker", {"event": event, "breaker": b.name, "reason": reason[:200],
+                                                    "trips": b.trips})
+        if not self.degraded:
+            try:
+                self.writer.submit(lambda c: _persist_breakers(c, self.board))
+            except Exception:
+                pass
+
+    def control(self, method: str, params: dict[str, Any], component: str | None) -> Any:
+        from arbiter_agent.policy.authority import actor_for
+
+        actor = actor_for(component, params.get("channel"))
+        ov = self.overrides
+        if method in ("control_set", "control_clear"):
+            scope = str(params.get("scope") or "global")
+            if scope == "session":
+                scope = str(self._session(params))
+            if method == "control_set":
+                return ov.set(str(params["key"]), params.get("value"), actor=actor, scope=scope,
+                              reason=str(params.get("reason") or ""))
+            return {"cleared": ov.clear(str(params["key"]), actor=actor, scope=scope)}
+        if method == "breaker_reset":
+            return ov.reset_breaker(str(params["name"]), actor=actor, reason=str(params.get("reason") or ""))
+        return {"actor": actor.name.lower(), "controller": self.flags.enabled("controller"),
+                "overrides": ov.list(), "breakers": self.board.snapshot(),
+                "modules": self.flags.snapshot(), "shedding": self.engine.shedder.snapshot(),
+                "budgets": self.engine.budgets.snapshot()}
+
     # ------------------------------------------------------------------ retrieval (M6)
     def retrieve(self, params: dict[str, Any]) -> Any:
         if self.retrieval is None:
             raise RuntimeError("repository indexes are disabled (feature flag repo_index)")
+        return self.board.guard("retrieval", lambda: self._retrieve(params), flag="repo_index",
+                                unavailable="repository index unavailable (circuit breaker or control); "
+                                            "use your own search tools")
+
+    def _retrieve(self, params: dict[str, Any]) -> Any:
+        assert self.retrieval is not None
         sid = self.engine.resolve_session(params)
         cwd = (self.engine.session_cwd(sid) if sid else None) or params.get("cwd")
         if not cwd:
@@ -374,18 +429,18 @@ class Daemon:
         if not self.flags.enabled("event_log"):
             return {"status": "disabled", "response": {}}
         deadline = Deadline(max(0.1, float(self.config.get("hooks.gating_deadline_ms", 1500)) / 1000.0 * 0.8))
-        from arbiter_agent.clients.hook_dialects import DIALECTS, adapt_inbound, adapt_outbound
+        from arbiter_agent.clients.hook_dialects import adapt_inbound
 
         native_event = (payload.get("hook_event_name") if isinstance(payload, dict) else None) or event_hint
-        payload, event_hint = adapt_inbound(client, payload, event_hint)   # M5 dialects -> canonical shape
+        try:
+            payload, event_hint = adapt_inbound(client, payload, event_hint)   # M5 dialects -> canonical shape
+        except Exception as exc:            # a dialect bug: record the raw payload, pass the host through
+            self.board.failure("client", f"inbound dialect: {type(exc).__name__}: {exc}", key=client)
         res = self.ingestor.ingest_hook(client, payload, surface=surface, event_hint=event_hint, channel=channel,
                                         wait=self._gating_wait())
         response: dict[str, Any] = {}
         if res.status in ("stored", "duplicate", "pending") and not self.degraded:
-            dialect = DIALECTS.get(client)
-            response = self.engine.after_hook(client, payload, event_hint, deadline,
-                                              can_block=dialect.can_block_stop if dialect else True)
-            response = adapt_outbound(client, native_event, response)
+            response = self.engine.respond(client, payload, event_hint, deadline, native_event=native_event)
         return {**res.to_dict(), "response": response}
 
     def _on_http_hook(self, client: str, event: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -453,6 +508,8 @@ class Daemon:
             "clients": self.clients.summary(), "watching": self.clients.watch_clients,
             "engine": self.engine.summary(), "gate_mode": self.config.get("completion.gate_mode", "annotate"),
             "retrieval": self.retrieval.summary() if self.retrieval else None,
+            "controller": self.flags.enabled("controller"), "open_breakers": self.board.open_names(),
+            "shedding": self.engine.shedder.snapshot(),
             "client_homes": {k: os.environ.get(k) for k in ("CODEX_HOME", "CLAUDE_CONFIG_DIR", "ARBITER_CLIENT_HOME")},
         }
 
@@ -489,6 +546,12 @@ class Daemon:
     def wait(self) -> None:
         while not self._stop.wait(0.5):
             pass
+
+
+def _persist_breakers(conn: Any, board: Any) -> None:
+    from arbiter_agent.ui.overrides import persist_breakers
+
+    persist_breakers(conn, board)
 
 
 def run_forever(paths: ArbiterPaths | None = None) -> int:

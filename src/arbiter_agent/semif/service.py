@@ -33,7 +33,8 @@ BACKOFF_S = (5.0, 30.0, 120.0, 600.0)
 class SemIfService:
     def __init__(self, decoder: Backend | None = None, encoder: Backend | None = None, *,
                  encoder_families: list[str] | None = None, adapters: dict[str, str] | None = None,
-                 timeout_s: float = 1.2, queue_capacity: int = 32, expected_revision: str | None = None) -> None:
+                 timeout_s: float = 1.2, queue_capacity: int = 32, expected_revision: str | None = None,
+                 board: Any = None) -> None:
         self.decoder: Backend = decoder or NullBackend()
         self.encoder: Backend = encoder or NullBackend(reason="tier 0 encoder disabled")
         self.encoder_families = set(encoder_families or [])
@@ -42,13 +43,14 @@ class SemIfService:
         self.expected_revision = expected_revision
         self.queue = WorkQueue("semif", capacity=queue_capacity)
         self.breakers: dict[str, Breaker] = {}
+        self.board = board              # policy BreakerBoard: family breakers become visible and resettable
         self._lock = threading.Lock()
         self._errors: dict[str, int] = {}
         self._backoff_until: dict[str, float] = {}
         self.stats = {"judged": 0, "abstained": 0, "invalid": 0, "shed": 0, "budget_rejected": 0}
 
     @classmethod
-    def from_config(cls, config: Any) -> SemIfService:
+    def from_config(cls, config: Any, board: Any = None) -> SemIfService:
         from arbiter_agent.semif.backends import from_config
 
         enc = config.get("semif.encoder") or {}
@@ -56,7 +58,7 @@ class SemIfService:
                    encoder_families=list(enc.get("families") or []), adapters=dict(config.get("semif.adapters") or {}),
                    timeout_s=float(config.get("semif.timeout_ms", 1200)) / 1000.0,
                    queue_capacity=int(config.get("semif.queue_capacity", 32)),
-                   expected_revision=config.get("semif.model_revision"))
+                   expected_revision=config.get("semif.model_revision"), board=board)
 
     def start(self) -> SemIfService:
         self.queue.start()
@@ -80,7 +82,8 @@ class SemIfService:
         with self._lock:
             b = self.breakers.get(family)
             if b is None:
-                b = self.breakers[family] = Breaker(f"semif:{family}", threshold=5, cooldown_s=300)
+                b = self.breakers[family] = (self.board.get("semif", family) if self.board is not None else
+                                             Breaker(f"semif:{family}", threshold=5, cooldown_s=300))
             return b
 
     def _backend_error(self, backend: Backend) -> None:

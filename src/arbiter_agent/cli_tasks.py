@@ -210,6 +210,82 @@ def cmd_index(a: argparse.Namespace) -> int:
     return 0
 
 
+def _confirmed_channel(needs_tty: bool, prompt: str) -> str | None:
+    """'cli_tty' after an interactive yes, 'cli' when no confirmation is needed, None if refused."""
+    if not needs_tty:
+        return "cli"
+    return "cli_tty" if _tty_confirm(prompt) else None
+
+
+def cmd_control(a: argparse.Namespace) -> int:
+    from arbiter_agent.policy import authority
+    from arbiter_agent.shims.mcp_server import render_controls
+
+    b = _bind(a)
+    if a.action in (None, "list"):
+        res = _call("control_list", b)
+        print(json.dumps(res, indent=1, default=str) if a.json else render_controls(res))
+        return 0
+    if a.action == "clear":
+        if not a.target:
+            print("usage: arbiter control clear KEY [--session]", file=sys.stderr)
+            return 2
+        res = _call("control_clear", {**b, "key": a.target, "scope": "session" if a.session_scope else "global",
+                                      "channel": "cli"})
+        print("cleared" if res["cleared"] else "nothing to clear")
+        return 0
+    if a.action == "module":
+        if not a.target or a.value not in ("on", "off"):
+            print("usage: arbiter control module NAME on|off", file=sys.stderr)
+            return 2
+        key, value = f"module:{a.target}", a.value
+    elif a.action == "controller":
+        if a.target not in ("on", "off"):
+            print("usage: arbiter control controller on|off [--session]", file=sys.stderr)
+            return 2
+        key, value = "controller", a.target
+    else:
+        return 2
+    needs_tty = authority.required(key, value) == authority.Actor.USER_TTY
+    channel = _confirmed_channel(needs_tty, f"{key} {value} weakens Arbiter's checks. Continue? [y/N] ")
+    if channel is None:
+        print("not changed (this needs an interactive terminal and an explicit yes)")
+        return 1
+    scope = "session" if a.session_scope else "global"
+    res = _call("control_set", {**b, "key": key, "value": value, "scope": scope, "channel": channel,
+                                "reason": a.reason or ""})
+    print(f"{res['key']} = {res['value']} ({res['scope']})")
+    return 0
+
+
+def cmd_breakers(a: argparse.Namespace) -> int:
+    from arbiter_agent.policy.circuit_breaker import SPECS
+
+    b = _bind(a)
+    if a.action == "reset":
+        if not a.name:
+            print("usage: arbiter breakers reset NAME", file=sys.stderr)
+            return 2
+        spec = SPECS.get(a.name.split(":", 1)[0])
+        channel = _confirmed_channel(bool(spec and spec.integrity),
+                                     f"Reset {a.name}? Only do this after inspecting why it tripped. [y/N] ")
+        if channel is None:
+            print("not reset (this breaker guards integrity: it needs an interactive terminal and an explicit yes)")
+            return 1
+        res = _call("breaker_reset", {**b, "name": a.name, "channel": channel, "reason": a.reason or ""})
+        print(f"{res['breaker']}: {'reset' if res['was_open'] else 'was not open'}")
+        return 0
+    res = _call("control_list", b)["breakers"]
+    if a.json:
+        print(json.dumps(res, indent=1))
+        return 0
+    for name, st in res.items():
+        print(f"{name:<40} {st['state']:<10} trips {st['trips']:<3} {st['fail_mode']:<18} {st['last_reason']}")
+    if not res:
+        print("no breakers have seen failures")
+    return 0
+
+
 def cmd_semif(a: argparse.Namespace) -> int:
     from arbiter_agent.config import load_config
     from arbiter_agent.paths import get_paths
@@ -281,6 +357,12 @@ def _write_semif_config(paths: Any, update: dict[str, Any]) -> None:
 def cmd_eval(a: argparse.Namespace) -> int:
     from arbiter_agent.eval import gates
 
+    if a.faults:
+        from arbiter_agent.eval import fault_injection
+
+        rep = fault_injection.run_all()
+        print(json.dumps(rep, indent=1) if a.json else fault_injection.render(rep))
+        return 0 if rep["passed"] else 4
     report = gates.run_all(Path(a.corpus) if a.corpus else None)
     if a.json:
         print(json.dumps(report, indent=1))
@@ -346,6 +428,24 @@ def add_parsers(sub: Any) -> None:
     session_args(s)
     s.set_defaults(fn=cmd_index)
 
+    s = sub.add_parser("control", help="manual controls: modules, controller on/off (spec 24)")
+    s.add_argument("action", nargs="?", choices=["list", "module", "controller", "clear"])
+    s.add_argument("target", nargs="?", help="module name, on|off, or the key to clear")
+    s.add_argument("value", nargs="?", help="on|off (for module)")
+    s.add_argument("--session", dest="session", help="session to bind to")
+    s.add_argument("--this-session", dest="session_scope", action="store_true",
+                   help="apply to the current session only (controller, clear)")
+    s.add_argument("--reason")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_control)
+
+    s = sub.add_parser("breakers", help="circuit breakers: list, or reset one after inspection")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "reset"])
+    s.add_argument("name", nargs="?")
+    s.add_argument("--reason")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_breakers)
+
     s = sub.add_parser("semif", help="semantic sensor: status, enable (plan tiers), disable, bench")
     s.add_argument("action", nargs="?", default="status", choices=["status", "enable", "disable", "bench"])
     s.add_argument("--yes", action="store_true", help="enable: write the plan to config")
@@ -354,5 +454,6 @@ def add_parsers(sub: Any) -> None:
 
     s = sub.add_parser("eval", help="run the evaluation corpus and the numeric gates (spec 20.17)")
     s.add_argument("--corpus", help="corpus directory (default: the packaged corpus)")
+    s.add_argument("--faults", action="store_true", help="run the circuit-breaker fault-injection suite instead")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_eval)

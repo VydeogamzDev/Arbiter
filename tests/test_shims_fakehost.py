@@ -57,7 +57,7 @@ def test_mcp_protocol_basics(daemon):
         names = [t["name"] for t in rpc(p, 3, "tools/list")["result"]["tools"]]
         assert names == ["arbiter_hook", "arbiter_status", "arbiter_ping", "arbiter_contract_propose",
                          "arbiter_contracts", "arbiter_scope_change", "arbiter_finish_check", "arbiter_verify",
-                         "arbiter_search", "arbiter_symbol", "arbiter_related"]
+                         "arbiter_search", "arbiter_symbol", "arbiter_related", "arbiter_controls"]
         st = rpc(p, 4, "tools/call", {"name": "arbiter_status", "arguments": {}})["result"]
         assert json.loads(st["content"][0]["text"])["pid"]
         assert rpc(p, 5, "tools/call", {"name": "nope", "arguments": {}})["error"]["code"] == -32602

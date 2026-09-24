@@ -33,7 +33,8 @@ _FLAGS = [
     Flag("test_integrity", True, "M3", "Test-integrity detection against the session baseline"),
     Flag("loop_alerts", True, "M3", "Advisory loop alerts"),
     Flag("completion_gate", True, "M4", "Completion gate (annotate by default; block is opt-in)"),
-    Flag("circuit_breakers", True, "M4", "Minimal breakers: hook latency, gate errors, parsers"),
+    Flag("circuit_breakers", True, "M4", "Circuit breakers (M8: every module, client and incident breaker)"),
+    Flag("controller", True, "M8", "Master switch: off returns clients to baseline behavior (events still recorded)"),
     Flag("status_injection", True, "M4", "Hook status summaries (also needs ui.inject_status)"),
     Flag("repo_index", True, "M6", "Repository indexes and Arbiter retrieval tools"),
     Flag("semif", True, "M7", "Semantic sensor service (null backend until `arbiter semif enable`)"),
@@ -48,7 +49,7 @@ REGISTRY: dict[str, Flag] = {f.name: f for f in _FLAGS}
 
 
 class FeatureFlags:
-    """Resolved flag state: registry default <- config override <- runtime force-off."""
+    """Resolved flag state: registry default <- config override <- user control <- runtime force-off."""
 
     def __init__(self, overrides: Mapping[str, bool] | None = None) -> None:
         unknown = set(overrides or {}) - set(REGISTRY)
@@ -56,6 +57,7 @@ class FeatureFlags:
             raise KeyError(f"unknown feature flags: {sorted(unknown)}")
         self._overrides = dict(overrides or {})
         self._forced_off: dict[str, str] = {}
+        self._user: dict[str, bool] = {}          # `arbiter control module ...` (persisted by ui.overrides)
         self._lock = threading.Lock()
 
     def enabled(self, name: str) -> bool:
@@ -63,7 +65,18 @@ class FeatureFlags:
         with self._lock:
             if name in self._forced_off:
                 return False
+            if name in self._user:
+                return self._user[name]
         return self._overrides.get(name, flag.default)
+
+    def set_user(self, name: str, value: bool | None) -> None:
+        """A user control (None clears it). Breakers still win: a forced-off flag stays off."""
+        REGISTRY[name]  # validate
+        with self._lock:
+            if value is None:
+                self._user.pop(name, None)
+            else:
+                self._user[name] = bool(value)
 
     def force_off(self, name: str, reason: str) -> None:
         """Runtime kill switch used by circuit breakers; does not persist."""
@@ -77,4 +90,4 @@ class FeatureFlags:
 
     def snapshot(self) -> dict[str, dict[str, object]]:
         return {n: {"enabled": self.enabled(n), "default": f.default, "milestone": f.milestone,
-                    "forced_off": self._forced_off.get(n)} for n, f in REGISTRY.items()}
+                    "forced_off": self._forced_off.get(n), "user": self._user.get(n)} for n, f in REGISTRY.items()}

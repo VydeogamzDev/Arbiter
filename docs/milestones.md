@@ -11,7 +11,7 @@ Conventions:
 
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
-       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers → M9 advisory
+       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers ✅ → M9 advisory
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
@@ -218,7 +218,7 @@ Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends
 - **Met in tests** (`tests/test_semif.py`): 0 malformed results consumed, saturation never blocks a hook, rules-only mode with the null backend.
 - **Pending on the 3080 Ti and model downloads:** real llama.cpp runs, the BF16 reference backend, OOM recovery on a real server, the latency exit, and the tier-table benchmark on the actual quantized files. Until then the sensor is shadow-only.
 
-## M8 — Policy core + full circuit breakers
+## M8 — Policy core + full circuit breakers ✅ Done 2026-09-24
 Stage 4 · Build step 23 · **Required before any automatic stage** (decision 0009)
 
 - **M8.1** `policy/authority`, `constraints`, `budgets`, `conflict_resolution` (§15.5).
@@ -227,6 +227,12 @@ Stage 4 · Build step 23 · **Required before any automatic stage** (decision 00
 - **M8.4** `ui/overrides` (the §24 controls, available from the CLI and MCP).
 
 **Exit:** 100% fault-injection trip rate. Optimization fails open, integrity fails conservative, and shims never block the host.
+
+**Result:** met (`tests/test_policy.py`, `arbiter eval --faults`; decision [0030](decisions/0030-m8-policy-core-and-breakers.md)).
+- **13 breaker kinds on one board,** each with a fault scenario: gate errors, hook latency, parsers, false completion (latched per session), client adapters, schema misses, controller, retrieval, sensor families, plus four modules not built yet (sensor parity, stale speculation, context restore, learned policy), which are driven synthetically.
+- **Recovery:** a half-open trial window, reopen on failure, N clean outcomes to close. Latched incidents need a manual reset. State survives restarts and every transition is audited.
+- **Cascade, §15.5 priority** with evidence floors (UNKNOWN never becomes PASS by preference), **authority** (agents can only request one-turn bypasses; weakening integrity needs an interactive user), **budgets and overload shedding** (integrity is never shed).
+- **Controls:** `arbiter control`, `arbiter breakers`, and the MCP tool `arbiter_controls`.
 
 ## M9 — Advisory modules
 Stage 5 · Build steps 24–26

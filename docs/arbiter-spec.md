@@ -2928,6 +2928,7 @@ semif:
   llama_cpp_url: http://127.0.0.1:8088   # loopback llama-server for decoder tiers (M7.2)
   model_revision: null          # pin: results from any other revision are rejected (§7.3)
   shadow: true                  # log sensor judgments next to rule decisions (never applied)
+  route_families: []            # families the cascade may let the sensor recommend on (benchmark-backed only)
   shared_state_enabled: false
   nvidia_q8_enabled: false
   mirror_binary_questions: true
@@ -3088,6 +3089,10 @@ policy:
   optimization_fail_open: true
   integrity_fail_conservative: true
   circuit_breakers: true
+  breakers: {}                  # per-kind overrides, e.g. {client: {threshold: 10}}; kinds in policy/circuit_breaker.py
+  budgets:                      # hard per-session, per-turn controller budgets (§15.5 level 7)
+    sensor_calls_per_turn: 4
+    inject_tokens_per_turn: 600
 ```
 
 # 27. Recommended Build Order

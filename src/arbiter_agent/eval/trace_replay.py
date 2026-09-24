@@ -85,7 +85,7 @@ class Harness:
         body = {"hook_event_name": event, **self._common(session), **(payload or {})}
         c = client or self.client
         res = self.ingestor.ingest_hook(c, body, surface="hook", wait=5.0)
-        resp = self.engine.after_hook(c, body, event, Deadline(5.0)) if res.status in ("stored", "duplicate") else {}
+        resp = self.engine.respond(c, body, event, Deadline(5.0)) if res.status in ("stored", "duplicate") else {}
         self.responses.append(resp)
         return resp
 

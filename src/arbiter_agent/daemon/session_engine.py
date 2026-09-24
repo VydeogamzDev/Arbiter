@@ -29,6 +29,9 @@ from arbiter_agent.completion import claim_detection, evidence_ledger, gate
 from arbiter_agent.completion.breakers import Breakers
 from arbiter_agent.completion.evidence_grades import ContractEval, EvalContext, evaluate
 from arbiter_agent.concurrency import Deadline, EpochCancel, Priority, WorkQueue
+from arbiter_agent.policy.budgets import Budgets
+from arbiter_agent.policy.circuit_breaker import BreakerBoard
+from arbiter_agent.policy.overload import LoadShedder
 from arbiter_agent.reasoning.loop_detector import LoopDetector
 from arbiter_agent.state import contract_compiler, contract_coverage, facts, goal_epochs
 from arbiter_agent.state import intent as intent_log
@@ -64,8 +67,15 @@ class SessionEngine:
         self.keyer = keyer
         self.config = config
         self.reducer = reducer
-        self.breakers = breakers or Breakers(float(config.get("hooks.gating_p95_budget_ms", 300)))
+        self.breakers = breakers or Breakers(
+            float(config.get("hooks.gating_p95_budget_ms", 300)),
+            board=BreakerBoard(flags=flags, overrides=dict(config.get("policy.breakers") or {})))
+        self.board = self.breakers.board
         self.bg = WorkQueue("engine-bg", capacity=256)
+        self.budgets = Budgets(dict(config.get("policy.budgets") or {}))
+        self.shedder = LoadShedder({"engine_bg": lambda: (self.bg.backlog, self.bg.capacity)},
+                                   latency=self.breakers.hook_latency)
+        self.overrides: Any = None          # ui.overrides.Overrides (set by the daemon)
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -115,9 +125,12 @@ class SessionEngine:
                 break
             try:
                 self.catch_up(Deadline(5.0))
-            except Exception:
+                self.board.success("controller")
+            except Exception as exc:
                 self.stats["errors"] += 1
+                self.board.failure("controller", f"catch-up: {type(exc).__name__}: {exc}")
                 log.exception("engine catch-up failed")
+            self.board.tick()
 
     def drain(self, timeout: float = 10.0) -> None:
         """Process everything logged so far, including background work (tests, CLI barriers)."""
@@ -216,6 +229,21 @@ class SessionEngine:
                      goal_epoch=int(st["goal_epoch"]))
         _ = event_dedupe  # the module keys hook events; internal events use explicit keys
 
+    def audit_global(self, etype: str, payload: dict[str, Any]) -> None:
+        """An ``internal.*`` audit event not tied to a session (controls, breakers)."""
+        from arbiter_agent.audit.event_log import append_event
+
+        ev = NormalizedEvent(client_id="arbiter", profile_version=1, native_session_id=None, surface="internal",
+                             event_type=etype, raw_hash=self.keyer(canonical_bytes(payload)), payload=payload,
+                             attrs={k: v for k, v in payload.items() if isinstance(v, (int, float, str, bool))})
+        ev.idempotency_key = f"internal:{etype}:{time.time_ns()}"
+        ev.dedupe_key = None
+        try:
+            self.writer.submit(lambda c: append_event(c, ev, redactions=0, max_payload_bytes=16 * 1024,
+                                                      keyer=self.keyer, reducer=self.reducer))
+        except Exception:
+            self.stats["errors"] += 1
+
     # ------------------------------------------------------------------ event processing
     def _process(self, conn: sqlite3.Connection, r: sqlite3.Row) -> list[tuple[str, str, int]]:
         sid, etype = str(r["session_id"]), str(r["event_type"])
@@ -303,6 +331,7 @@ class SessionEngine:
         flags = dict(st["flags"])
         flags.pop("resume_pending", None)
         self._save(conn, st, intent_count=ordinal, flags=flags)
+        self.budgets.new_turn(st["session_id"])
         if dec.action == "confirm_new":
             self._confirm_epoch(conn, st, ordinal, dec.reason)
         elif dec.action == "candidate":
@@ -587,6 +616,42 @@ class SessionEngine:
 
         self.writer.run(job, timeout=5)
 
+    # ------------------------------------------------------------------ hook responses (M8 wrapper)
+    def controller_on(self, sid: str | None = None) -> bool:
+        if not self.enabled("controller"):
+            return False
+        return True if self.overrides is None else bool(self.overrides.controller_on(sid))
+
+    def respond(self, client: str, payload: Any, event_hint: str | None, deadline: Deadline, *,
+                native_event: str | None = None) -> dict[str, Any]:
+        """The client's response to a just-logged hook, behind the client breaker (§18.6: client
+        adapters fail open) and the controller switch. The event is already recorded either way."""
+        from arbiter_agent.clients.hook_dialects import DIALECTS, adapt_outbound
+
+        name = (payload.get("hook_event_name") if isinstance(payload, dict) else None) or event_hint
+        if hook_event_type(str(name) if name else None) == "unknown":
+            self.board.failure("schema_miss", f"unrecognized hook event {str(name)[:60]!r}", key=client)
+        else:
+            self.board.success("schema_miss", key=client)
+        native = payload.get("session_id") if isinstance(payload, dict) else None
+        if not self.controller_on(f"{client}:{native}" if native else None):
+            return {}
+        if self.board.is_open("client", client):
+            return {}
+        try:
+            dialect = DIALECTS.get(client)
+            resp = self.after_hook(client, payload, event_hint, deadline,
+                                   can_block=dialect.can_block_stop if dialect else True)
+            resp = adapt_outbound(client, native_event or name, resp)
+        except Exception as exc:
+            self.board.failure("client", f"{type(exc).__name__}: {exc}", key=client)
+            log.exception("hook response failed (fail open)", extra={"fields": {"client": client}})
+            return {}
+        self.board.success("client", key=client)
+        if deadline.expired():
+            self.board.failure("controller", "hook response overran its deadline")
+        return resp
+
     # ------------------------------------------------------------------ gate (M4)
     def after_hook(self, client: str, payload: Any, event_hint: str | None, deadline: Deadline,
                    can_block: bool = True) -> dict[str, Any]:
@@ -631,7 +696,7 @@ class SessionEngine:
             if not claim.gated and not self.config.get("completion.record_non_claims", False):
                 self._note_verdict(sid, claim.claim, "not_gated")
                 return {}
-            breaker = self.breakers.gate_open()
+            breaker = self.breakers.gate_open(sid)
             ledger = None
             if breaker is None and claim.gated:
                 _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
@@ -639,7 +704,7 @@ class SessionEngine:
                               max_blocks=max_blocks, unavailable_reason=breaker)
             self.record_ledger(sid, ledger, trigger="stop_hook", claim=claim.claim, verdict=out.verdict, mode=mode,
                                blocked=out.blocked, note=out.reason)
-            self._note_verdict(sid, claim.claim, out.verdict)
+            self._note_verdict(sid, claim.claim, out.verdict, self._check_false_complete(sid, st, ledger, out.verdict))
             self.breakers.gate_errors.record_success()
             return out.response
         except Exception as exc:
@@ -649,7 +714,37 @@ class SessionEngine:
         finally:
             self.breakers.hook_latency.record_latency((time.monotonic() - t0) * 1000.0)
 
+    def _change_seq(self, sid: str) -> int:
+        rc = self._read()
+        try:
+            fs = facts.load(rc, sid, ("file_change",))
+        finally:
+            rc.close()
+        return max([int(f["source_seq"]) for f in fs] or [0])
+
+    def _check_false_complete(self, sid: str, st: dict[str, Any], ledger: Any, verdict: str) -> dict[str, Any] | None:
+        """§15.3 false-complete incident: contracts that were verified fail (or turn flaky) later in
+        the same epoch with no code change since. Trips the session's latched breaker; returns the
+        flag update that remembers a new verified state."""
+        if ledger is None:
+            return None
+        cs = self._change_seq(sid)
+        prev = st["flags"].get("verified_at")
+        if prev and prev.get("epoch") == ledger.goal_epoch and prev.get("change_seq") == cs:
+            now = {c.id: ev for c, ev in ledger.contracts}
+            bad = [cid for cid in prev.get("contracts", []) if cid in now and
+                   (now[cid].status == "fail" or now[cid].grade == "conflicted")]
+            if bad:
+                self.board.failure("false_complete", f"{', '.join(bad)} verified, then contradicted with no "
+                                   "code change (flaky or wrong evidence)", key=sid)
+        if verdict == "verified":
+            return {"verified_at": {"epoch": ledger.goal_epoch, "change_seq": cs,
+                                    "contracts": [c.id for c, ev in ledger.contracts if ev.status == "pass"]}}
+        return None
+
     def _notify(self, sid: str, kind: str, info: dict[str, Any]) -> None:
+        if not self.controller_on(sid):
+            return
         for fn in self.decision_listeners:
             try:
                 fn(sid, kind, info)
@@ -675,7 +770,7 @@ class SessionEngine:
         text = data.get("last_assistant_message") or data.get("text") if isinstance(data, dict) else None
         return str(text) if text else None
 
-    def _note_verdict(self, sid: str, claim: str, verdict: str) -> None:
+    def _note_verdict(self, sid: str, claim: str, verdict: str, extra: dict[str, Any] | None = None) -> None:
         def job(conn: sqlite3.Connection) -> None:
             st = self._state(conn, sid, create=False)
             if st is None:
@@ -683,6 +778,7 @@ class SessionEngine:
             flags = dict(st["flags"])
             flags["last_verdict"] = verdict
             flags["last_claim"] = claim
+            flags.update(extra or {})
             self._save(conn, st, flags=flags)
 
         try:
@@ -693,6 +789,8 @@ class SessionEngine:
     def on_prompt_hook(self, sid: str, event_name: str, deadline: Deadline) -> dict[str, Any]:
         """Optional status injection (``ui.inject_status``; default off)."""
         if not self.config.get("ui.inject_status", False) or not self.enabled("status_injection"):
+            return {}
+        if not self.shedder.allow("foreground"):
             return {}
         self.catch_up(deadline.sub(0.5))
         try:

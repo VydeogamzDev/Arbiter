@@ -132,6 +132,19 @@ TOOLS += [
         "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, **_SESSION}, "required": ["path"]},
     },
 ]
+TOOLS += [
+    {
+        "name": "arbiter_controls",
+        "description": "Arbiter's controls and circuit breakers. action=list shows modules, open breakers and load "
+                       "shedding. action=request asks for a one-turn bypass for this session: "
+                       "next_turn:bypass_retrieval_narrowing, next_turn:normal_tool_surface or next_turn:full_review. "
+                       "Anything that weakens verification (gate mode, disabling modules, resetting breakers) can only "
+                       "be changed by the user with `arbiter control`.",
+        "inputSchema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "request"]},
+            "control": {"type": "string"}, **_SESSION}},
+    },
+]
 RETRIEVAL_TOOLS = {"arbiter_search": "search", "arbiter_symbol": "symbol", "arbiter_related": "related"}
 TASK_TOOLS = {"arbiter_contract_propose": "contract_propose", "arbiter_contracts": "session_status",
               "arbiter_scope_change": "scope_change", "arbiter_finish_check": "finish_check"}
@@ -194,7 +207,7 @@ class MCPShim:
                 record_failopen(self.paths.logs, "mcp_shim", exc.reason)
                 trigger_launch(self.paths)
                 return self._text(f"Arbiter daemon unavailable ({exc.reason}); starting it in the background.")
-        if name in TASK_TOOLS or name == "arbiter_verify":
+        if name in TASK_TOOLS or name in ("arbiter_verify", "arbiter_controls"):
             return self._task_tool(name, args)
         if name in RETRIEVAL_TOOLS:
             return self._retrieval_tool(name, args)
@@ -216,6 +229,12 @@ class MCPShim:
                 self._client = c
             if name == "arbiter_verify":
                 return self._text(self._verify(c, params))
+            if name == "arbiter_controls":
+                if args.get("action") == "request":
+                    res = c.request("control_set", {**params, "key": str(args.get("control") or ""), "value": True,
+                                                    "scope": "session"}, timeout=10.0)
+                    return self._text(f"{res['key']} set for this session (one turn).")
+                return self._text(render_controls(c.request("control_list", params, timeout=10.0)))
             method = TASK_TOOLS[name]
             res = c.request(method, params, timeout=15.0)
             return self._text(render_task_result(name, res))
@@ -336,6 +355,19 @@ class MCPShim:
         if self._client:
             self._client.close()
         return 0
+
+
+def render_controls(res: dict[str, Any]) -> str:
+    lines = [f"controller: {'on' if res.get('controller') else 'OFF'}   "
+             f"load shedding level: {res.get('shedding', {}).get('level', 0)}"]
+    opened = {n: b for n, b in (res.get("breakers") or {}).items() if b.get("state") != "closed"}
+    lines.append("breakers: " + (", ".join(f"{n} ({b['state']}: {b['last_reason']})" for n, b in opened.items())
+                                 or "none open"))
+    off = [n for n, m in (res.get("modules") or {}).items() if not m.get("enabled")]
+    lines.append("modules off: " + (", ".join(off) or "none"))
+    for o in res.get("overrides") or []:
+        lines.append(f"control {o['key']} = {o['value']} ({o['scope']}, by {o['actor']})")
+    return "\n".join(lines)
 
 
 def render_retrieval(name: str, res: Any) -> str:

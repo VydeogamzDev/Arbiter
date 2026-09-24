@@ -44,12 +44,14 @@ arbiter doctor                     # shows what's verified for each client
 | `arbiter verify --init`, then `--trust`, then `arbiter verify` | run your repo's verification commands as Arbiter-observed evidence (`.arbiter/verify.yaml`; trusting it needs an interactive terminal) |
 | `arbiter eval` | run the built-in evaluation corpus against the §20.17 gates |
 | `arbiter exclude <path>` | stop recording sessions under a path |
+| `arbiter control` / `arbiter breakers` | manual controls and circuit breakers: switch a module off, turn the controller off (clients get their normal behavior back; events are still recorded), reset a breaker after inspecting it. Anything that weakens verification asks for confirmation in an interactive terminal |
+| `arbiter eval --faults` | inject a fault into every circuit breaker and check that each trips and fails safe |
 | `arbiter semif status` / `enable` / `bench` | optional semantic sensor: plans a model tier for your GPU (writes config only with `--yes`, never downloads by itself). Until measured it only logs judgments beside the rules and never changes a decision |
 
 Agents get these MCP tools:
 - **task state:** `arbiter_contract_propose`, `arbiter_contracts`, `arbiter_scope_change`, `arbiter_finish_check`, `arbiter_verify`;
 - **repository retrieval:** `arbiter_search`, `arbiter_symbol`, `arbiter_related`;
-- **health:** `arbiter_status`.
+- **health and controls:** `arbiter_status`, `arbiter_controls` (agents can list controls and ask for a one-turn bypass; they can't weaken verification).
 
 Retrieval results are always fresh, skip secrets and generated files, and cite `path:line`. Use `arbiter search "..."` in a terminal for the same results.
 
@@ -88,5 +90,8 @@ ARBITER_REAL_CLAUDE=1 uv run pytest tests/test_real_claude_memory.py -s   # opt-
 | Evidence, finish ledger, claim detection, gate, breakers, verify runner | `completion/` |
 | Runner parsers, baseline, test integrity, errors, diff stats, usage | `telemetry/` |
 | Loop detection (advisory) | `reasoning/` |
+| Repository indexes and retrieval tools | `retrieval/` |
+| Semantic sensor: backends, budgeting, validation, mirroring, shadow harness, benchmark | `semif/` |
+| Policy core: fail modes, breaker board, cascade, priority and authority, budgets, shedding; controls | `policy/`, `ui/overrides.py` |
 | Privacy: redaction at ingest, project scope and `.arbiterignore`, retention and storage cap | `privacy/` |
 | Eval harness, corpus and §20.17 gates | `eval/` |
