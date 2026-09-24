@@ -63,3 +63,14 @@ def daemon(home: ArbiterPaths):
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+def pytest_runtest_logreport(report):  # type: ignore[no-untyped-def]
+    """On GitHub Actions, surface each failure as an error annotation (readable without log access)."""
+    if not os.environ.get("GITHUB_ACTIONS") or not report.failed or report.when not in ("setup", "call"):
+        return
+    path, line, _ = report.location
+    crash = getattr(report.longrepr, "reprcrash", None)
+    msg = crash.message if crash is not None else str(report.longrepr).strip().splitlines()[-1:]
+    msg = str(msg).replace("%", "%25").replace("\r", "").replace("\n", "%0A")[:900]
+    print(f"\n::error file={path},line={(line or 0) + 1}::{report.nodeid} [{sys.platform}]: {msg}", flush=True)
