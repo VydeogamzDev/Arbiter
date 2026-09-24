@@ -61,11 +61,16 @@ semif:
   max_concurrent_batches: 2
   reference_backend: cuda_bf16_fresh
   backend: auto                 # auto | llama_cpp | exl3 | semif_bf16 | null (decision 0026); inert until M7
-  model_tiers:                  # `arbiter semif enable` proposes the largest tier that fits the GPU
-    - {min_vram_gb: 6, model: Qwen3.5-4B, quant: Q4_K_M}
+  encoder:                      # tier 0: short typed decisions on CPU or GPU, no GPU required (decision 0026)
+    enabled: false
+    model: fastino/GLiNER2.5-Decide
+    device: auto                # auto | cpu | cuda
+    families: [completion_claim, scope_change, requirement_detection, contract_coverage]
+  model_tiers:                  # decoder tiers; `arbiter semif enable` proposes the largest that fits the GPU
+    - {min_vram_gb: 6, model: JevK5, base: Qwen3.5-4B, quant: Q4_K_M}
     - {min_vram_gb: 12, model: K2-Horizon-7B, quant: Q4_K_M}
     - {min_vram_gb: 16, model: K2-Horizon-7B, quant: Q6_K}
-  adapters: {}                  # decision family -> fine-tuned LoRA adapter (research track R6)
+  adapters: {}                  # decision family -> fine-tuned adapter or encoder checkpoint (research track R6)
   shared_state_enabled: false
   nvidia_q8_enabled: false
   mirror_binary_questions: true

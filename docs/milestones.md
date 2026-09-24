@@ -179,14 +179,19 @@ Build step 20 · Tier T1
 Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends-model-tiers-and-fine-tuning.md) · Research: [semantic-sensor-models](research/semantic-sensor-models.md)
 
 - **M7.1 Backend interface + null backend**: `semif/service`, `backends/null`, `health`. Every backend returns the same scored-option result. No GPU needed.
+- **M7.1b Tier 0 encoder backend**: `backends/encoder` with GLiNER2.5-Decide (340M, CPU or GPU).
+  - **Families:** completion claim, scope change / continuation, requirement detection, contract coverage.
+  - **Claim detection stays rules-first:** the encoder may only add claims the rules missed.
+  - **Confidence** is calibrated before the cascade uses it.
+  - **No GPU needed,** so it can ship as v0.2 before M7.2.
 - **M7.2 llama.cpp GGUF backend**: `backends/llama_cpp`, with direct option-logit scoring, prefix caching, multi-LoRA, a bounded queue, deadlines, OOM recovery, and restart backoff. The SemIf BF16 path (`backends/semif_bf16`) is kept as the reference and parity backend. **Needs the 3080 Ti.**
-- **M7.2b Model tiers by VRAM**: Qwen3.5-4B Q4_K_M at 6 GB+, K2 Horizon 7B Q4_K_M at 12 GB+, Q6_K at 16 GB+ (K2 at 8 GB is opt-in, short context only). Reasoning is disabled for scoring.
+- **M7.2b Decoder tiers by VRAM**: JevK5 (Qwen3.5-4B + distilled LoRA) Q4_K_M at 6 GB+, K2 Horizon 7B Q4_K_M at 12 GB+, Q6_K at 16 GB+ (K2 at 8 GB is opt-in, short context only). Reasoning is disabled for scoring. Each decision family is routed to the encoder or a decoder tier by benchmark.
 - **M7.3 Request budgeting**: `semif/request_budget`, using the exact tokenizer with criterion/envelope reserve (§7.2).
 - **M7.4 Validation**: `semif/validation`. Rejects NaN, malformed output, or a wrong revision, and abstains on failure (§7.3).
 - **M7.5 Mirroring + batching**: `semif/mirroring`, `batching`, with identical prefixes only.
 - **M7.6 `arbiter semif enable`**: checks CUDA and VRAM, proposes the largest tier that fits, and downloads weights only after confirmation.
 - **M7.7 Shadow harness**: async scoring, never awaited in hooks (§4.4.5), with calibration data collection.
-- **M7.8 Sensor benchmark**: `eval/corpus/sensor/`, labeled judgments per decision family. It reports balanced accuracy, calibration (Brier/ECE), abstention rate and latency per model × quant × backend, measured on the exact quantized files.
+- **M7.8 Sensor benchmark**: `eval/corpus/sensor/`, labeled judgments per decision family. It reports balanced accuracy, calibration (Brier/ECE), abstention rate and latency per model × quant × backend (encoder included), measured on the exact quantized files. It decides which stage owns each family.
 
 **Exit:**
 - 0 malformed results consumed.
@@ -275,6 +280,6 @@ Stages R1–R5 (§23.2). These start only after the core track is stable, and ne
 - **R3 — Learned utility bounded auto** (step R3.1): `policy/conservative_policy`. **Exit:** a better constrained Pareto frontier than rules, on repo, time, model, and client holdouts.
 - **R4 — Selective branching** (steps R4.1–R4.2): `branching/*`; a worktree alone is rejected as a sandbox. **Exit:** net hard-task gain after cost, and 0 isolation failures.
 - **R5 — Backend optimization** (step R5.1, **needs the GPU**): BF16 shared-state against fresh, plus an EXL3 backend once it supports the tier models (Qwen3.5 hybrid layers, `k2_horizon`). **Exit:** per-module and end-to-end parity gates pass (§22), and EXL3 is adopted only if faster at equal accuracy.
-- **R6 — Fine-tuned sensors** (step R6.1, **needs the GPU and real v0.1 traces**): QLoRA adapters per decision family on the tier base models.
+- **R6 — Fine-tuned sensors** (step R6.1, **needs the GPU and real v0.1 traces**): full fine-tunes of the tier 0 encoder (minutes on the 3080 Ti), plus QLoRA adapters per decision family on the decoder base models.
   - **Labels** come from outcomes, user decisions, and an offline Opus 5.5 pass over a sample; its cost is confirmed before each run.
   - **Exit:** each adapter beats the untuned base and the rules on held-out repos and time windows, with no regression in other families. Calibration is re-fit on the quantized artifact.

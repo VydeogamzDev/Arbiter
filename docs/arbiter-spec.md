@@ -297,7 +297,7 @@ A client whose config format, hook payloads, or transcript format has drifted fr
 | Component | Target |
 | --- | --- |
 | Router GPU | RTX 3080 Ti, 12 GB |
-| Router model | Tiered by VRAM behind a backend interface (decision 0026): Qwen3.5-4B (6 GB+) or K2 Horizon 7B (12 GB+), GGUF Q4–Q6 via llama.cpp first; SemIf BF16 kept as the reference path |
+| Router model | Two stages behind a backend interface (decision 0026): tier 0 GLiNER2.5-Decide encoder (CPU or GPU, no GPU required) for short typed decisions; then a decoder tier by VRAM: JevK5 (Qwen3.5-4B + distilled LoRA, 6 GB+) or K2 Horizon 7B (12 GB+), GGUF Q4–Q6 via llama.cpp first. SemIf BF16 is kept as the reference path |
 | Supported reference inference | BF16 fresh scoring |
 | Optimized reference | BF16 shared-state only after drift gate |
 | Optional future deployment | NVIDIA Q8 only after backend implementation + parity |
@@ -1028,12 +1028,17 @@ Decision 0026 applies. SemIf's direct-logit scoring is the technique; the runtim
 
 - **Backends:**
   - `null` (rules only);
-  - `llama_cpp` (GGUF, multi-LoRA, prefix caching; the first real backend);
+  - `encoder` (GLiNER2.5-Decide and similar typed-decision encoders; CPU or GPU);
+  - `llama_cpp` (GGUF, multi-LoRA, prefix caching; the first decoder backend);
   - `semif_bf16` (reference and parity path);
   - `exl3`, later.
 
   Every backend returns the same scored-option result and passes §7.3 validation.
-- **Model tiers by VRAM:** Qwen3.5-4B at 6 GB+, K2 Horizon 7B at 12 GB+ (Q6_K at 16 GB+). Reasoning is disabled for scoring.
+- **Two stages:**
+  - **Tier 0 encoder (GLiNER2.5-Decide, 340M):** handles short, high-volume typed decisions on any machine: completion claims, scope changes, requirement detection, contract coverage. It needs no GPU.
+  - **Decoder tier:** handles long-context or reasoning-heavy judgments (context and retrieval relevance, review risk, effort): JevK5 (Qwen3.5-4B + distilled LoRA) at 6 GB+, K2 Horizon 7B at 12 GB+ (Q6_K at 16 GB+). Reasoning is disabled for scoring.
+  - Each decision family is routed to one stage by benchmark results. The encoder is trained on 512-token-class inputs, so longer inputs go to the decoder or are summarized deterministically first.
+- **Claim detection stays rules-first.** The encoder may only *add* completion claims the rules missed, which widens what the gate checks. It never removes a rule-detected claim and never marks anything verified.
 - **Adapters:** one base model stays in VRAM, with a LoRA adapter per decision family (completion claim, scope change, context relevance, retrieval relevance, review risk).
 - **Selection by measurement:** a sensor benchmark in the eval corpus reports accuracy, calibration, abstention and latency per model × quant × backend. Calibration and parity run on the exact quantized artifact (§22).
 - **Authority unchanged:** a stronger or fine-tuned sensor still can't certify, widen permissions or block by itself (§7.6).
@@ -2910,11 +2915,16 @@ semif:
   max_concurrent_batches: 2
   reference_backend: cuda_bf16_fresh
   backend: auto                 # auto | llama_cpp | exl3 | semif_bf16 | null (decision 0026); inert until M7
-  model_tiers:                  # `arbiter semif enable` proposes the largest tier that fits the GPU
-    - {min_vram_gb: 6, model: Qwen3.5-4B, quant: Q4_K_M}
+  encoder:                      # tier 0: short typed decisions on CPU or GPU, no GPU required (decision 0026)
+    enabled: false
+    model: fastino/GLiNER2.5-Decide
+    device: auto                # auto | cpu | cuda
+    families: [completion_claim, scope_change, requirement_detection, contract_coverage]
+  model_tiers:                  # decoder tiers; `arbiter semif enable` proposes the largest that fits the GPU
+    - {min_vram_gb: 6, model: JevK5, base: Qwen3.5-4B, quant: Q4_K_M}
     - {min_vram_gb: 12, model: K2-Horizon-7B, quant: Q4_K_M}
     - {min_vram_gb: 16, model: K2-Horizon-7B, quant: Q6_K}
-  adapters: {}                  # decision family -> fine-tuned LoRA adapter (research track R6)
+  adapters: {}                  # decision family -> fine-tuned adapter or encoder checkpoint (research track R6)
   shared_state_enabled: false
   nvidia_q8_enabled: false
   mirror_binary_questions: true

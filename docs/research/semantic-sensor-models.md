@@ -1,4 +1,4 @@
-# Semantic sensor models: candidates, speed estimates, quality (2026-09-24)
+# Semantic sensor models: candidates, speed estimates, quality (2026-09-24, amended the same day)
 
 Research note behind [decision 0026](../decisions/0026-sensor-backends-model-tiers-and-fine-tuning.md). Numbers marked *estimate* are derived, not measured. Replace them with the M7 sensor benchmark once the 3080 Ti is back.
 
@@ -12,7 +12,42 @@ Arbiter's semantic sensor never writes text. It scores a few answer options afte
 
 Every GPU below clears the demand by a wide margin. **Choose the model by accuracy and VRAM, not speed.**
 
-## Candidates
+## The landscape (typed-decision models)
+
+- **Jev** (TypeSafe): a commercial typed-decision model. JevBench is the public benchmark for this category; Jev 1.13.0 scores 63.29 on v1.4.
+- **SemIf:** direct option-logit scoring on Qwen3.5-4B.
+- **JevK5:** Qwen3.5-4B plus a distilled LoRA, read out with SemIf's protocol (softmax over the answer letters' next-token logits, temperature T = 1.532). About 13 ms per decision on an H100 with CUDA graphs. Apache 2.0. Ranked second of 76 on JevBench v1.4 (62.04).
+- **GLiNER2.5-Decide** (Fastino, released 2026-09-24):
+  - a 340M DeBERTa-v3-large encoder, Apache 2.0;
+  - handles single-label, multi-label, yes/no, 0–10 score, and questions over a passage;
+  - runs locally on CPU; full fine-tuning through the `gliner2` trainer;
+  - trained domains include **agent completion**, routing, handoff, moderation, severity and urgency;
+  - no reasoning or open-ended answers; English examples only; no max input length or calibration metrics published.
+
+| Model | Size | Fast Decisions (Fastino's suite, 17 domains × 300 held-out) |
+| --- | --- | --- |
+| GLiNER2.5-Decide | 0.34B | 60.2% |
+| GLiNER2 XL | 1B | 59.6% |
+| JevK5 | 4B | 57.6% |
+| SemIf (Qwen3.5-4B) | 4B | 56.4% |
+| GLiFormer large-v1 | — | 49.0% |
+| Laya Router | 0.4B | 46.6% |
+
+How to read these results:
+- **The lead is probably real on this suite.** With about 5,100 examples, the standard error is around 0.7 points, so +2.6 over JevK5 is more than noise.
+- **It is a vendor suite** whose domains resemble GLiNER's training data. Independent testing (Hanno-Labs decision-bench) was only just requested.
+- **All systems score 56–60%.** None is an oracle, and the Arbiter-specific sensor benchmark decides.
+
+What each stage suits:
+
+| Arbiter judgment | Encoder (GLiNER2.5-Decide) | Decoder (JevK5 / K2 7B) |
+| --- | --- | --- |
+| completion claim in a final message | strong fit (short text, trained domain) | works, overkill |
+| scope change vs "continue" | strong fit (short text) | works |
+| requirement detection / contract coverage | good fit after fine-tuning | works |
+| context or retrieval relevance, review risk, effort choice | weak: long inputs (code, diffs, state), trained on 512-token-class inputs, no reasoning | intended use |
+
+## Candidates (decoder tiers)
 
 | | Qwen3.5-4B | K2 Horizon 7B |
 | --- | --- | --- |
@@ -55,6 +90,17 @@ Qwen's numbers are less certain, because llama.cpp's Gated DeltaNet kernels are 
 
 Artificial Analysis's 25.8 tok/s figure for Qwen3.5 4B is an API provider's generation speed, not a local one.
 
+## Tier 0 speed and footprint
+
+These are *estimates* for a 340M encoder (DeBERTa-v3-large-class).
+
+| Where it runs | Footprint | Short decision (≤ 256 tokens) |
+| --- | --- | --- |
+| Modern desktop CPU | ~0.7 GB RAM (FP16/INT8 ONNX: less) | ~20–60 ms |
+| Any recent NVIDIA GPU | ~0.7 GB VRAM | ~3–10 ms, batches well |
+
+That's far above demand, and it needs no GPU. That's why tier 0 can ship before the decoder backend.
+
 ## Expected quality difference for Arbiter
 
 - **General intelligence:** K2 7B is clearly stronger (+8 index points, about 1.6×).
@@ -70,6 +116,9 @@ Artificial Analysis's 25.8 tok/s figure for Qwen3.5 4B is an API provider's gene
 - **Multi-LoRA serving:** llama.cpp and vLLM can apply different LoRA adapters per request. One base model in VRAM can then serve several fine-tuned decision families.
 
 ## Sources
+- [fastino/GLiNER2.5-Decide](https://huggingface.co/fastino/GLiNER2.5-Decide) · [Fastino models](https://fastino.ai/models) · [GLiNER2.5 blog](https://fastino.ai/blog/gliner2-5-span-free-information-extraction)
+- [Hanno-Labs decision-bench intake for GLiNER2.5-Decide](https://github.com/Hanno-Labs/decision-bench/issues/27)
+- [JevK5](https://github.com/ngrok-adhoc/jevk5) · [allebee/jevk5](https://github.com/allebee/jevk5) · [alibiserikbay/JevK5](https://huggingface.co/alibiserikbay/JevK5)
 - [Artificial Analysis — Qwen3.5 4B](https://artificialanalysis.ai/models/qwen3-5-4b)
 - [Artificial Analysis — K2 Horizon 7B](https://artificialanalysis.ai/models/k2-horizon-7b)
 - [Artificial Analysis — Intelligence Index v4.3.2](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index)
