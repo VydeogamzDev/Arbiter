@@ -1,0 +1,126 @@
+# Contract recall (spec 20.17: explicit-requirement recall >= 0.95).
+# A requirement counts as surfaced when a contract covers it (agent-proposed or rule-extracted)
+# or the coverage check flags it as uncovered. `requirements` are substrings of the prompts.
+# `bad_quotes` proposals must be rejected (provenance), and `status` fields must be ignored.
+cases:
+  - id: overflow-fix
+    prompts: ["Fix the quantity overflow in checkout/parser.ts without changing the public API. Run `npm test` when done."]
+    proposals:
+      - {text: "overflow fixed", quotes: ["Fix the quantity overflow in checkout/parser.ts"], recipe: {type: test_command, command: "npm test"}}
+    requirements: ["Fix the quantity overflow", "without changing the public API", "Run `npm test`"]
+  - id: two-reqs-one-covered
+    prompts: ["Add a --verbose flag to the CLI.\nAlso the help text must mention the config file."]
+    proposals:
+      - {text: "verbose flag", quotes: ["Add a --verbose flag to the CLI"], recipe: {type: file_contains, path: cli.py, text: "--verbose"}}
+    requirements: ["Add a --verbose flag", "help text must mention the config file"]
+  - id: bullets
+    prompts: ["Please do the following:\n- rename `load_cfg` to `load_config`\n- keep the old name as a deprecated alias\n- update the README example"]
+    proposals: []
+    requirements: ["rename `load_cfg`", "keep the old name", "update the README"]
+  - id: dont-touch
+    prompts: ["Refactor the retry loop in net/client.py but don't touch net/legacy.py. Tests in tests/test_client.py should still pass."]
+    proposals:
+      - {text: "retry loop refactored", quotes: ["Refactor the retry loop in net/client.py"], recipe: {type: test_command, command: "pytest tests/test_client.py"}}
+    requirements: ["Refactor the retry loop", "don't touch net/legacy.py", "should still pass"]
+  - id: request-form
+    prompts: ["Can you make the export run in the background? It needs to report progress every second."]
+    proposals: []
+    requirements: ["make the export run in the background", "needs to report progress"]
+  - id: i-want
+    prompts: ["I want the API to return 404 for missing users instead of 500."]
+    proposals:
+      - {text: "404 for missing users", quotes: ["return 404 for missing users instead of 500"], recipe: {type: test_command, command: "pytest tests/test_api.py"}}
+    requirements: ["return 404 for missing users"]
+  - id: follow-up-constraint
+    prompts: ["Implement pagination for /items.", "use cursor-based pagination, not offsets", "and cap page size at 100"]
+    proposals:
+      - {text: "pagination", quotes: ["Implement pagination for /items"], recipe: {type: test_command, command: "pytest -q"}}
+    requirements: ["Implement pagination", "use cursor-based pagination", "cap page size at 100"]
+  - id: numbered
+    prompts: ["1. Add input validation to signup\n2. Log rejected attempts\n3. Never store the raw password"]
+    proposals:
+      - {text: "validation", quotes: ["Add input validation to signup"], recipe: {type: test_command, command: "pytest tests/test_signup.py"}}
+      - {text: "no raw password", quotes: ["Never store the raw password"], recipe: {type: manual, description: "reviewed"}}
+    requirements: ["Add input validation", "Log rejected attempts", "Never store the raw password"]
+  - id: file-named
+    prompts: ["The bug is in utils/dates.py. Timezones are dropped when parsing ISO strings; fix that."]
+    proposals: []
+    requirements: ["utils/dates.py", "fix that"]
+  - id: make-sure-cmd
+    prompts: ["Upgrade the dependency to v3 and make sure `cargo test` passes."]
+    proposals: []
+    requirements: ["Upgrade the dependency to v3", "make sure `cargo test` passes"]
+  - id: should-style
+    prompts: ["The parser should accept trailing commas. It shouldn't accept comments."]
+    proposals:
+      - {text: "trailing commas", quotes: ["The parser should accept trailing commas"], recipe: {type: test_command, command: "pytest"}}
+      - {text: "no comments", quotes: ["It shouldn't accept comments"], recipe: {type: test_command, command: "pytest"}}
+    requirements: ["should accept trailing commas", "shouldn't accept comments"]
+  - id: question-not-req
+    prompts: ["Why does the build take so long? Speed up the Docker build by caching dependencies."]
+    proposals: []
+    requirements: ["Speed up the Docker build"]
+  - id: lets-form
+    prompts: ["Let's add dark mode to the settings page, stored in localStorage."]
+    proposals: []
+    requirements: ["add dark mode"]
+  - id: without-constraint
+    prompts: ["Speed up the query without adding new indexes."]
+    proposals:
+      - {text: "faster query", quotes: ["Speed up the query"], recipe: {type: manual, description: "benchmark"}}
+    requirements: ["Speed up the query", "without adding new indexes"]
+  - id: create-file
+    prompts: ["Create a new file docs/ARCHITECTURE.md describing the daemon, and link it from the README."]
+    proposals: []
+    requirements: ["Create a new file docs/ARCHITECTURE.md", "link it from the README"]
+  - id: only-constraint
+    prompts: ["Only change files under src/billing. Fix the rounding error in invoices."]
+    proposals:
+      - {text: "rounding fixed", quotes: ["Fix the rounding error in invoices"], recipe: {type: test_command, command: "pytest tests/billing"}}
+    requirements: ["Only change files under src/billing", "Fix the rounding error"]
+  - id: ensure-form
+    prompts: ["Ensure the worker shuts down cleanly on SIGTERM and flushes its queue."]
+    proposals: []
+    requirements: ["Ensure the worker shuts down cleanly"]
+  - id: multi-turn-plain
+    prompts: ["Add a health endpoint.", "It must return the git sha.", "Make it respond in under 50ms."]
+    proposals:
+      - {text: "health endpoint", quotes: ["Add a health endpoint"], recipe: {type: test_command, command: "pytest tests/test_health.py"}}
+      - {text: "git sha", quotes: ["It must return the git sha"], recipe: {type: test_command, command: "pytest tests/test_health.py"}}
+    requirements: ["Add a health endpoint", "must return the git sha", "respond in under 50ms"]
+  - id: could-you
+    prompts: ["Could you write unit tests for the tokenizer? Cover empty input and unicode."]
+    proposals: []
+    requirements: ["write unit tests for the tokenizer", "Cover empty input and unicode"]
+  - id: need-to
+    prompts: ["We need to support Python 3.11 through 3.14. Drop 3.9."]
+    proposals: []
+    requirements: ["support Python 3.11 through 3.14", "Drop 3.9"]
+provenance:
+  - id: fabricated-quote
+    prompts: ["Fix the typo in the README."]
+    proposals:
+      - {text: "tests pass", quotes: ["make sure all tests pass"], recipe: {type: test_command, command: "pytest"}}
+    expect_rejected: 1
+  - id: paraphrased-quote
+    prompts: ["Add caching to the user lookup."]
+    proposals:
+      - {text: "cache", quotes: ["add a cache for user lookups"], recipe: {type: test_command, command: "pytest"}}
+    expect_rejected: 1
+  - id: too-short-quote
+    prompts: ["Add caching to the user lookup."]
+    proposals:
+      - {text: "cache", quotes: ["Add"], recipe: {type: test_command, command: "pytest"}}
+    expect_rejected: 1
+  - id: status-injection
+    prompts: ["Add caching to the user lookup."]
+    proposals:
+      - {text: "cache", quotes: ["Add caching to the user lookup"], status: pass, recipe: {type: test_command, command: "pytest"}}
+    expect_rejected: 0
+    expect_status: unknown
+  - id: quote-from-other-session
+    prompts: ["Add caching to the user lookup."]
+    other_session_prompts: ["Delete the legacy exporter entirely."]
+    proposals:
+      - {text: "delete exporter", quotes: ["Delete the legacy exporter entirely"], recipe: {type: file_exists, path: exporter.py, absent: true}}
+    expect_rejected: 1

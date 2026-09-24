@@ -1,0 +1,46 @@
+# Loop-alert precision (spec 20.17: >= 0.80; advisory only). Each case is a fact sequence:
+#   run: [command, fail|pass, error text or ""]   edit: path
+# `loop: true` cases should raise an alert; `loop: false` should not.
+cases:
+  - id: same-error-thrice
+    loop: true
+    steps: [[run, pytest, fail, "E AssertionError: assert 3 == 4"], [edit, a.py], [run, pytest, fail, "E AssertionError: assert 3 == 4"], [edit, a.py], [run, pytest, fail, "E AssertionError: assert 3 == 4"]]
+  - id: same-error-different-numbers
+    loop: true
+    steps: [[run, pytest, fail, "E KeyError: 'id' at line 10"], [edit, a.py], [run, pytest, fail, "E KeyError: 'id' at line 12"], [edit, b.py], [run, pytest, fail, "E KeyError: 'id' at line 14"]]
+  - id: rerun-without-change
+    loop: true
+    steps: [[run, npm test, fail, "Error: timeout"], [run, npm test, fail, "Error: timeout 2"], [run, npm test, fail, "Error: timeout 3"]]
+  - id: edit-thrash
+    loop: true
+    steps: [[run, pytest, fail, "E TypeError: x"], [edit, a.py], [run, pytest, fail, "E ValueError: y"], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py]]
+  - id: tsc-same-error
+    loop: true
+    steps: [[run, npx tsc, fail, "src/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'."], [edit, src/a.ts], [run, npx tsc, fail, "src/a.ts(4,7): error TS2322: Type 'string' is not assignable to type 'number'."], [edit, src/a.ts], [run, npx tsc, fail, "src/a.ts(5,7): error TS2322: Type 'string' is not assignable to type 'number'."]]
+  - id: go-same-panic
+    loop: true
+    steps: [[run, go test ./..., fail, "panic: runtime error: index out of range [3] with length 3"], [edit, x.go], [run, go test ./..., fail, "panic: runtime error: index out of range [4] with length 4"], [edit, x.go], [run, go test ./..., fail, "panic: runtime error: index out of range [5] with length 5"]]
+  - id: progress-each-time
+    loop: false
+    steps: [[run, pytest, fail, "E AssertionError: a"], [edit, a.py], [run, pytest, fail, "E AssertionError: b"], [edit, b.py], [run, pytest, pass, ""]]
+  - id: two-failures-then-pass
+    loop: false
+    steps: [[run, pytest, fail, "E AssertionError: assert 3 == 4"], [edit, a.py], [run, pytest, fail, "E AssertionError: assert 3 == 4"], [edit, a.py], [run, pytest, pass, ""]]
+  - id: different-errors
+    loop: false
+    steps: [[run, pytest, fail, "E ImportError: x"], [edit, a.py], [run, pytest, fail, "E TypeError: y"], [edit, a.py], [run, pytest, fail, "E KeyError: z"]]
+  - id: many-edits-no-runs
+    loop: false
+    steps: [[edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py]]
+  - id: edits-with-passing-runs
+    loop: false
+    steps: [[edit, a.py], [run, pytest, pass, ""], [edit, a.py], [run, pytest, pass, ""], [edit, a.py], [edit, a.py], [edit, a.py], [edit, a.py]]
+  - id: rerun-after-fix
+    loop: false
+    steps: [[run, npm test, fail, "Error: timeout"], [edit, x.js], [run, npm test, fail, "Error: other"], [edit, x.js], [run, npm test, pass, ""]]
+  - id: flaky-then-green
+    loop: false
+    steps: [[run, pytest, fail, "E ConnectionError: refused"], [run, pytest, pass, ""], [run, pytest, fail, "E ConnectionError: refused"], [run, pytest, pass, ""]]
+  - id: decreasing-failures
+    loop: false
+    steps: [[run, pytest, fail, "E AssertionError: x", 5], [edit, a.py], [run, pytest, fail, "E AssertionError: x", 3], [edit, a.py], [run, pytest, fail, "E AssertionError: x", 1]]

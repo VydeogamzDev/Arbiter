@@ -1,0 +1,222 @@
+# Arbiter default configuration. Source of record: docs/arbiter-spec.md §26.
+# User overrides live in <config dir>/config.yaml and must match these keys and types.
+
+daemon:
+  single_instance: true
+  ipc: auto                     # named pipe on Windows, unix socket elsewhere
+  tcp_fallback_requires_token: true
+  lazy_autostart: true
+  login_autostart: false
+  idle_shutdown_minutes: 0      # 0 = stay up while any client session is active
+
+clients:
+  enabled: detected_and_accepted
+  builtin_profiles: true
+  user_profile_dir: ~/.arbiter/profiles
+  degrade_on_drift: true
+  transcript_watchers: true
+
+hooks:
+  transport_preference: [in_process, command]   # mcp_tool / http first; command CLI fallback (decision 0021)
+  http_port: fixed_at_setup     # loopback only; stable so client config and trust don't churn
+  telemetry_async: true
+  telemetry_deadline_ms: 150
+  telemetry_p95_budget_ms: 50
+  gating_deadline_ms: 1500
+  gating_p95_budget_ms: 300
+  await_semif: false            # gating hooks use only precomputed scores
+  fail_open: true
+  max_injected_tokens: 300
+  inject_only_on_change: true
+  suggest_arbiter_retrieval_on_broad_search: false   # opt-in pre-tool nudge
+
+setup:
+  scope: user
+  backup_before_write: true
+  show_diff: true
+  atomic_write: true
+  abort_on_parse_failure: true
+  modify_repo_instruction_files: false
+  # Hard invariants (enforced in code, deliberately NOT configurable):
+  #   - never modify client permission/approval/sandbox/model settings
+  #   - never move/remove/wrap existing MCP servers outside `arbiter gateway adopt`
+
+ipc:
+  require_token: true
+  tcp_fallback_bind: loopback
+  rotate_token_on_restart: true
+
+integration:
+  native_enabled: false         # NATIVE-flagged features require an explicitly pinned patched host
+  require_capability_probe: true
+  pin_codex_version_for_native_mode: true
+  custom_history_rewrite: disabled
+  dynamic_schema_mutation: disabled
+
+semif:
+  enabled: false                # set by `arbiter semif enable` after GPU/VRAM/weights checks
+  backend_when_disabled: null_abstain
+  timeout_ms: 1200
+  queue_capacity: 32
+  max_concurrent_batches: 2
+  reference_backend: cuda_bf16_fresh
+  shared_state_enabled: false
+  nvidia_q8_enabled: false
+  mirror_binary_questions: true
+  paraphrase_high_impact: true
+  malformed_result_action: abstain
+
+hosts:
+  enabled: true                 # accept Host Advisory API connections from authenticated local hosts
+  api_major_version: 1
+  default_deadline_ms: 150      # hosts may pass their own; SemIf never awaited on the hot path
+  hivemind:
+    project_confined: true      # Hivemind memory is project-local; no cross-project data use
+    context_scoring_enabled: false   # until §9.11 regression gate passes on Hivemind's CR7 probes
+
+reasoning:
+  hosted_client_mode: advisory  # automatic only via orchestrator hosts, T4 sessions, or verified effort APIs
+  choose_model_tier: true       # model × effort within allowed set (§8.8)
+  objective: cost_per_successful_task
+  fail_open_to_codex_default: true
+  derive_efforts_from_model_metadata: true
+  high_lease_calls: 2
+  expensive_tier_lease_calls: 1
+  deescalate_progress_checkpoints: 2
+  confirm_setting_update: true
+  disable_dynamic_effort_on_cache_regression: true
+
+context:
+  active_task_irreversible_delete: false
+  archive_before_evict: true
+  exact_tokenizer_budgeting: true
+  compaction_trigger_fraction: 0.72
+  emergency_trigger_fraction: 0.88
+  require_history_version_cas: true
+  require_two_phase_checkpoint: true
+  native_compaction_enabled: false
+
+gateway:
+  enabled: false                # enabled per client only after benchmark vs native deferral
+  enabled_min_catalog_size: 20
+  stable_schema_surface: true
+  normal_surface_miss_recovery: true
+  authorization_bridge_required: true
+  adopt_existing_servers: explicit_only
+  proxy_policy: read_only_unless_approval_mirrored
+  approval_inheritance: false
+
+retrieval:
+  semantic_rerank: true
+  min_pinned_deterministic_candidates: 3
+  adaptive_top_k: true
+  broaden_on_no_progress: true
+  branch_overlay_indexes: true
+  secret_indexing: deny_by_default
+
+review:
+  security_floor: high
+  database_migration_floor: high
+  destructive_change_floor: high
+  public_api_floor: high
+  test_harness_floor: high
+  final_broad_verification_by_risk: true
+  stratified_low_risk_audit: true
+
+completion:
+  gate_mode: annotate           # annotate | block (opt-in per user/repo/session)
+  gate_only_on_completion_claims: true
+  max_stop_blocks_per_epoch: 3  # block mode only
+  contracts_proposed_by: host_agent
+  require_verbatim_quote_provenance: true
+  agent_asserted_evidence_sufficient: false
+  flag_uncovered_intent: true
+  require_session_baseline_for_integrity_ok: true
+  verify_config_file: .arbiter/verify.yaml   # opt-in; user config fallback
+  semif_cannot_certify_alone: true
+  require_contract_evidence: true
+  unknown_never_counts_as_pass: true
+  require_test_integrity_check: true
+  allow_user_finish_with_unknown: true
+  mark_unverified_when_unknown: true
+  record_non_claims: false      # also write finish-ledger rows for stops that aren't completion claims
+
+state:
+  immutable_intent_log: true
+  goal_epochs: true
+  epoch_confirmation: explicit_or_rule   # candidate epoch per prompt; confirm on scope change (§6.3.1)
+  new_task_phrases: []          # extra regexes that confirm a new goal epoch (user phrase rules)
+  path_case_folding: per_volume_detect
+  reconcile_on_resume: true
+  reconcile_on_user_interrupt: true
+  reconcile_on_branch_apply: true
+
+ui:
+  inject_status: false          # hook additionalContext status summaries (on change, within max_injected_tokens)
+
+learning:
+  auto_enabled: false
+  shadow: true
+  constrained_noninferiority: true
+  ood_abstain: true
+  log_propensity_when_randomized: true
+  require_repo_time_model_holdouts: true
+
+speculation:
+  enabled: false
+  max_concurrent_jobs: 3
+  ttl_seconds: 30
+  max_io_share: 0.15
+  allowlist: [file_read, file_stat, lexical_search, symbol_lookup, ast_query, local_git_object_read]
+  arbitrary_shell: false
+  tests: false
+  network: false
+  credentials: false
+
+branching:
+  enabled: false
+  max_branches: 2
+  max_substantive_calls_per_branch: 3
+  max_budget_fraction: 0.15
+  require_sandbox: true
+  worktree_alone_is_sandbox: false
+  network_default: deny
+  credentials_default: none
+  require_main_reverify: true
+  early_stop: true
+
+privacy:
+  local_only: true
+  redact_at_ingest: true
+  redact_secrets_in_logs: true
+  raw_blob_encryption: optional
+  training_excludes_secret_records: true
+  project_scope: all_except_excluded     # or allow_list
+  project_exclude: []
+  respect_arbiterignore: true
+  raw_payload_retention_days: 30
+  ledger_and_metrics_retention_days: 180
+
+storage:
+  sqlite_wal: true
+  sqlite_foreign_keys: true
+  single_writer: true
+  append_only_audit_log: true
+  storage_cap_gb: 2
+  max_payload_kb: 512           # larger payloads stored truncated + full-content hash
+  backup_before_migration: true
+
+diagnostics:
+  log_rotation_mb: 20
+  debug_mode_expiry_hours: 24
+
+policy:
+  repository_text_can_change_limits: false
+  upstream_safety_priority: absolute
+  controller_user_override_priority: below_upstream_safety
+  optimization_fail_open: true
+  integrity_fail_conservative: true
+  circuit_breakers: true
+
+# Feature-flag overrides: {flag_name: true|false}. Valid names come from arbiter_agent.flags.
+features: {}

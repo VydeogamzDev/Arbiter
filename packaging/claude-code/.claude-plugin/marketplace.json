@@ -1,0 +1,13 @@
+{
+  "name": "arbiter-local",
+  "owner": {"name": "Arbiter"},
+  "description": "Local marketplace for the Arbiter Claude Code plugin",
+  "plugins": [
+    {
+      "name": "arbiter",
+      "source": "./plugins/arbiter",
+      "description": "Local control plane for coding agents: records the session, checks completion claims against evidence.",
+      "displayName": "Arbiter"
+    }
+  ]
+}

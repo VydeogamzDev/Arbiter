@@ -1,0 +1,118 @@
+{
+ "wheel": "arbiter_agent-0.1.0-py3-none-any.whl",
+ "steps": [
+  {
+   "cmd": "uv tool install D:\\Projects\\Arbiter\\dist\\arbiter_agent-0.1.0-py3-none-any.whl",
+   "rc": 0,
+   "s": 0.17,
+   "tail": [
+    "Resolved 2 packages in 3ms",
+    "Installed 2 packages in 116ms",
+    " + arbiter-agent==0.1.0 (from file:///D:/Projects/Arbiter/dist/arbiter_agent-0.1.0-py3-none-any.whl)",
+    " + pyyaml==6.0.3",
+    "Installed 1 executable: arbiter"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE version",
+   "rc": 0,
+   "s": 0.23,
+   "tail": [
+    "arbiter-agent 0.1.0 (ipc protocol 1.0)"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE setup --yes --clients codex,claude_code",
+   "rc": 0,
+   "s": 1.93,
+   "tail": [
+    "  updated C:\\Users\\ethan\\AppData\\Local\\Temp\\arbiter-toolcheck-h7bhg61a\\claude\\settings.json",
+    "daemon: running",
+    "",
+    "Next step for Codex (desktop + CLI): Codex runs hooks only after you trust them once. In the Codex CLI run /hooks and trust the Arbiter entries; in the Codex desktop app open Settings > Hooks. Until then Codex works at tiers T1+T3 (tools and transcripts), without the completion gate.",
+    "",
+    "Done. Run `arbiter doctor` any time to check each client."
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE status",
+   "rc": 0,
+   "s": 0.25,
+   "tail": [
+    "daemon: healthy  pid 36436  v0.1.0  up 1.5s  ipc: pipe  http hooks: 49725",
+    "store: ok  events: 0  sessions: 0  writer backlog: 0",
+    "ingest: {}  debug: off"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE doctor --json",
+   "rc": 0,
+   "s": 1.05,
+   "tail": [
+    "    },",
+    "    \"detail\": \"\"",
+    "   }",
+    "  }",
+    " ]",
+    "}"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE eval",
+   "rc": 0,
+   "s": 8.89,
+   "tail": [
+    "integrity: 23 weakening cases, 5 benign, false alarms 0",
+    "loops: precision 1.0, recall 1.0",
+    "gate traces: 30 (failed: []), median 13.8 ms",
+    "",
+    "RESULT: all gates pass",
+    "(8.5 s)"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE uninstall --yes --clients codex,claude_code",
+   "rc": 0,
+   "s": 0.28,
+   "tail": [
+    "restored C:\\Users\\ethan\\AppData\\Local\\Temp\\arbiter-toolcheck-h7bhg61a\\codex\\config.toml (byte-identical to before setup)",
+    "deleted C:\\Users\\ethan\\AppData\\Local\\Temp\\arbiter-toolcheck-h7bhg61a\\codex\\hooks.json (Arbiter created it)",
+    "deleted C:\\Users\\ethan\\AppData\\Local\\Temp\\arbiter-toolcheck-h7bhg61a\\claude\\.claude.json (Arbiter created it)",
+    "deleted C:\\Users\\ethan\\AppData\\Local\\Temp\\arbiter-toolcheck-h7bhg61a\\claude\\settings.json (Arbiter created it)"
+   ]
+  },
+  {
+   "cmd": "arbiter.EXE daemon stop",
+   "rc": 0,
+   "s": 0.25,
+   "tail": [
+    "stopped"
+   ]
+  }
+ ],
+ "installed_exe_in_tool_bin": true,
+ "doctor_clients": {
+  "claude_code": {
+   "configured": [
+    "T1",
+    "T2"
+   ],
+   "verified": []
+  },
+  "codex": {
+   "configured": [
+    "T1",
+    "T2"
+   ],
+   "verified": []
+  }
+ },
+ "doctor_daemon": {
+  "running": true,
+  "version": "0.1.0",
+  "events": 0
+ },
+ "codex_mcp_points_to_tool_exe": true,
+ "eval_passed": true,
+ "codex_config_restored": true
+}

@@ -1,0 +1,30 @@
+# Claude Code (CLI, -p and desktop share ~/.claude and ~/.claude.json).
+schema_version: 1
+id: claude_code
+display_name: Claude Code
+profile_version: 1
+detect:
+  any_path: ["{claude_dir}"]
+  any_command: ["claude"]
+  any_glob: []
+mcp:
+  file: "{claude_global_json}"
+  format: json_named_entry
+  container: mcpServers
+  name: arbiter
+  live_file: true          # Claude Code rewrites this file itself; merge with re-check
+hooks:
+  file: "{claude_dir}/settings.json"
+  format: json_hook_groups
+  transport: http
+  trust_required: false
+transcripts:
+  root: "{claude_dir}/projects"
+  glob: "*/*.jsonl"
+  parser: claude_code_v1
+tools:
+  shell: ["Bash", "PowerShell"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: true   # Claude Code already loads MCP tool schemas on demand (decision 0006)

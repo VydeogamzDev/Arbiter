@@ -1,0 +1,134 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "SessionStart"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "UserPromptSubmit"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "PreToolUse"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "PostToolUse"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "Stop"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "SubagentStop"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "PreCompact"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "SessionEnd"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

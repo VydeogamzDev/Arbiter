@@ -1,0 +1,36 @@
+# Prompt sequences with the expected epoch decision per prompt (spec 6.3.1).
+# Gate: "yes, continue"-style replies never confirm a new epoch or supersede contracts.
+sequences:
+  - prompts:
+      - {text: "Fix the login redirect bug in auth.py", expect: confirm_new}
+      - {text: "yes, continue", expect: join}
+      - {text: "ok go ahead", expect: join}
+      - {text: "Also make sure the logout path works", expect: candidate}
+      - {text: "New task: add a CSV export to the reports page", expect: confirm_new}
+      - {text: "sounds good, proceed", expect: join}
+  - prompts:
+      - {text: "Refactor the cache layer", expect: confirm_new}
+      - {text: "continue", expect: join}
+      - {text: "keep going", expect: join}
+      - {text: "yes please", expect: join}
+      - {text: "Scratch that, let's start over with a simpler design", expect: confirm_new}
+      - {text: "lgtm", expect: join}
+  - prompts:
+      - {text: "Add retries to the HTTP client", expect: confirm_new}
+      - {text: "use exponential backoff capped at 30s", expect: candidate}
+      - {text: "Thanks! Now let's work on the rate limiter", expect: confirm_new}
+      - {text: "yep, do it", expect: join}
+      - {text: "Forget about that, switch to the parser bug", expect: confirm_new}
+  - prompts:
+      - {text: "Write docs for the CLI", expect: confirm_new}
+      - {text: "go on", expect: join}
+      - {text: "Unrelated question: why is CI slow?", expect: confirm_new}
+      - {text: "ok, thanks", expect: join}
+      - {text: "Moving on, implement the export flag", expect: confirm_new}
+  - resume: true
+    prompts:
+      - {text: "Port the tests to pytest", expect: confirm_new}
+      - {text: "@resume", expect: resume}
+      - {text: "continue", expect: join}
+      - {text: "@resume", expect: resume}
+      - {text: "Now fix the flaky network test", expect: confirm_new}

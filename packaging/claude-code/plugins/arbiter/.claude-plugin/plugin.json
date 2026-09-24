@@ -1,0 +1,8 @@
+{
+  "name": "arbiter",
+  "displayName": "Arbiter",
+  "version": "0.1.0",
+  "description": "Local control plane for coding agents. Records the session locally and checks completion claims against evidence (annotate mode by default; never blocks unless you opt in).",
+  "keywords": ["verification", "completion", "hooks", "local"],
+  "license": "UNLICENSED"
+}

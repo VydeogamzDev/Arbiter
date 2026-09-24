@@ -1,0 +1,86 @@
+# Runner-parser fixtures. expect: pass | fail | unknown | none (not recognized).
+# Gate (spec 20.17): FAIL/UNKNOWN/none read as PASS = 0 misreads.
+cases:
+  - {id: pytest-pass, command: "pytest -q", exit: 0, expect: pass, output: "....\n4 passed in 0.12s\n"}
+  - {id: pytest-pass-banner, command: "python -m pytest", exit: 0, expect: pass,
+     output: "============================= test session starts =============================\ncollected 3 items\n\ntests/test_a.py ...                                                     [100%]\n\n============================== 3 passed in 0.05s ==============================\n"}
+  - {id: pytest-fail, command: "pytest", exit: 1, expect: fail,
+     output: "FAILED tests/test_a.py::test_x - AssertionError: assert 1 == 2\n========================= 1 failed, 2 passed in 0.10s ========================="}
+  - {id: pytest-error, command: "pytest", exit: 2, expect: fail,
+     output: "ERROR tests/test_b.py - ModuleNotFoundError: No module named 'foo'\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n=============================== 1 error in 0.20s ==============================="}
+  - {id: pytest-no-tests, command: "pytest -k nothing", exit: 5, expect: unknown,
+     output: "collected 10 items / 10 deselected / 0 selected\n=========================== 10 deselected in 0.01s ===========================\n============================ no tests ran in 0.01s ============================"}
+  - {id: pytest-pass-but-exit1, command: "pytest", exit: 1, expect: unknown, output: "3 passed in 0.11s"}
+  - {id: pytest-skips-only, command: "pytest", exit: 0, expect: unknown, output: "======= 4 skipped in 0.02s ======="}
+  - {id: pytest-xfail-pass, command: "pytest", exit: 0, expect: pass, output: "==== 5 passed, 1 xfailed in 0.30s ===="}
+  - {id: pytest-log-noise, command: "pytest", exit: 1, expect: fail,
+     output: "INFO the test passed in 0.1s on retry\n==== 1 failed, 9 passed in 2.00s ===="}
+  - {id: pytest-truncated, command: "pytest", exit: null, expect: none, output: "tests/test_a.py ....F..."}
+  - {id: pytest-wrapped-ps, command: "powershell.exe -Command 'cd D:\\repo; uv run pytest -q'", exit: 0, expect: pass,
+     output: "12 passed in 1.02s"}
+  - {id: pytest-bash-lc, command: "bash -lc \"cd /repo && python -m pytest tests\"", exit: 1, expect: fail,
+     output: "== 2 failed, 10 passed in 3.1s =="}
+  - {id: unittest-ok, command: "python -m unittest discover", exit: 0, expect: pass,
+     output: "......\n----------------------------------------------------------------------\nRan 6 tests in 0.004s\n\nOK\n"}
+  - {id: unittest-fail, command: "python -m unittest", exit: 1, expect: fail,
+     output: "..F\n----------------------------------------------------------------------\nRan 3 tests in 0.002s\n\nFAILED (failures=1)\n"}
+  - {id: unittest-zero, command: "python -m unittest", exit: 5, expect: unknown,
+     output: "\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nOK\n"}
+  - {id: django-test, command: "python manage.py test", exit: 0, expect: pass,
+     output: "Ran 14 tests in 0.300s\n\nOK (skipped=1)"}
+  - {id: jest-pass, command: "npx jest", exit: 0, expect: pass,
+     output: "Test Suites: 2 passed, 2 total\nTests:       8 passed, 8 total\nSnapshots:   0 total\nTime:        1.2 s"}
+  - {id: jest-fail, command: "npm test", exit: 1, expect: fail,
+     output: "Test Suites: 1 failed, 1 passed, 2 total\nTests:       1 failed, 7 passed, 8 total"}
+  - {id: jest-todo-only, command: "npx jest", exit: 0, expect: unknown, output: "Tests:       2 todo, 2 total"}
+  - {id: vitest-pass, command: "npx vitest run", exit: 0, expect: pass,
+     output: " Test Files  3 passed (3)\n      Tests  21 passed (21)\n   Start at  10:00:00\n   Duration  1.10s"}
+  - {id: vitest-fail, command: "pnpm vitest run", exit: 1, expect: fail,
+     output: " Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 20 passed (21)"}
+  - {id: mocha-pass, command: "npx mocha", exit: 0, expect: pass, output: "\n  12 passing (40ms)\n"}
+  - {id: mocha-fail, command: "npx mocha", exit: 1, expect: fail, output: "\n  11 passing (40ms)\n  1 failing\n"}
+  - {id: go-pass, command: "go test ./...", exit: 0, expect: pass,
+     output: "ok  \texample.com/a\t0.010s\nok  \texample.com/b\t0.020s\n"}
+  - {id: go-fail, command: "go test ./...", exit: 1, expect: fail,
+     output: "--- FAIL: TestX (0.00s)\n    x_test.go:10: bad\nFAIL\nFAIL\texample.com/a\t0.012s\nok  \texample.com/b\t0.020s\nFAIL\n"}
+  - {id: go-build-fail, command: "go test ./...", exit: 1, expect: fail,
+     output: "# example.com/a\na.go:3:2: undefined: foo\nFAIL\texample.com/a [build failed]\nFAIL\n"}
+  - {id: cargo-pass, command: "cargo test", exit: 0, expect: pass,
+     output: "running 4 tests\ntest a ... ok\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"}
+  - {id: cargo-fail, command: "cargo test", exit: 101, expect: fail,
+     output: "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"}
+  - {id: cargo-multi, command: "cargo test --workspace", exit: 101, expect: fail,
+     output: "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured\ntest result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured"}
+  - {id: dotnet-pass, command: "dotnet test", exit: 0, expect: pass,
+     output: "Passed!  - Failed:     0, Passed:    12, Skipped:     0, Total:    12, Duration: 1 s - App.Tests.dll (net8.0)"}
+  - {id: dotnet-fail, command: "dotnet test", exit: 1, expect: fail,
+     output: "Failed!  - Failed:     2, Passed:    10, Skipped:     0, Total:    12, Duration: 1 s - App.Tests.dll (net8.0)"}
+  - {id: tsc-fail, command: "npx tsc --noEmit", exit: 2, expect: fail,
+     output: "src/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n\nFound 1 error in src/a.ts:3\n"}
+  - {id: tsc-silent, command: "npx tsc --noEmit", exit: 0, expect: none, output: ""}
+  - {id: eslint-fail, command: "npx eslint .", exit: 1, expect: fail,
+     output: "/r/a.js\n  1:1  error  'x' is defined but never used  no-unused-vars\n\n✖ 1 problem (1 error, 0 warnings)\n"}
+  - {id: eslint-warn, command: "npx eslint .", exit: 0, expect: pass, output: "✖ 2 problems (0 errors, 2 warnings)"}
+  - {id: ruff-pass, command: "ruff check .", exit: 0, expect: pass, output: "All checks passed!\n"}
+  - {id: ruff-fail, command: "uv run ruff check src", exit: 1, expect: fail,
+     output: "src/a.py:1:1: F401 [*] `os` imported but unused\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\n"}
+  - {id: mypy-pass, command: "mypy src", exit: 0, expect: pass, output: "Success: no issues found in 12 source files\n"}
+  - {id: mypy-fail, command: "mypy src", exit: 1, expect: fail,
+     output: "src/a.py:3: error: Incompatible return value type  [return-value]\nFound 1 error in 1 file (checked 12 source files)\n"}
+  - {id: not-a-runner, command: "echo 3 passed in 0.1s", exit: 0, expect: none, output: "3 passed in 0.1s"}
+  - {id: cat-log, command: "cat test.log", exit: 0, expect: none, output: "== 10 passed in 1.0s =="}
+  - {id: generic-npm-pytest-shape, command: "npm test", exit: 0, expect: pass, output: "== 7 passed in 0.5s =="}
+  - {id: generic-make-fail, command: "make test", exit: 2, expect: fail,
+     output: "== 1 failed, 6 passed in 0.5s ==\nmake: *** [test] Error 1"}
+  - {id: generic-unrecognized, command: "make test", exit: 0, expect: none, output: "All good!"}
+  - {id: pytest-interrupted, command: "pytest", exit: 2, expect: fail,
+     output: "!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!\n==== 2 passed, 1 error in 5.00s ===="}
+  - {id: pytest-unknown-exit, command: "pytest -q", exit: null, expect: pass, output: "5 passed in 0.2s"}
+  - {id: jest-pass-exit-contradiction, command: "npx jest", exit: 1, expect: unknown,
+     output: "Tests:       8 passed, 8 total"}
+  - {id: junit-pass, junit: true, expect: pass,
+     output: "<testsuites><testsuite name='a' tests='3' failures='0' errors='0' skipped='0'/></testsuites>"}
+  - {id: junit-fail, junit: true, expect: fail,
+     output: "<testsuite name='a' tests='3' failures='1' errors='0' skipped='0'></testsuite>"}
+  - {id: junit-empty, junit: true, expect: unknown, output: "<testsuites><testsuite name='a' tests='0'/></testsuites>"}
+  - {id: junit-garbage, junit: true, expect: none, output: "not xml at all"}

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python 3.12
+      - run: uv run ruff check src tests
+      - run: uv run mypy
+      - run: uv run mypy --platform linux
+      - run: uv run mypy --platform win32
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python ${{ matrix.python }}
+      - name: Unit and integration tests (fast)
+        run: uv run pytest -m "not slow"
+      - name: POSIX smoke (no pytest dependency)
+        if: runner.os != 'Windows'
+        run: uv run python tests/posix_smoke.py
+
+  exit-gates:
+    # M1 exit gates (latency, cold start, WMI launch outside the job). Runs on Windows,
+    # the primary target; hosted runners are slower than a dev box, so treat a miss as a signal
+    # to investigate, not an automatic regression.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python 3.12
+      - run: uv run pytest -m slow -v
+
+  package:
+    # v0.1 release check: build, install the wheel as a uv tool, and run the M3/M4 eval gates
+    # with the installed command (spec 20.17; decision 0025). Publishing stays manual.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - run: uv tool install dist/*.whl
+      - run: arbiter version
+      - run: arbiter eval

@@ -1,0 +1,54 @@
+{
+ "n": 40,
+ "python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
+ "results": {
+  "native exe baseline (hostname.exe)": {
+   "p50": 28.3,
+   "p95": 85.1,
+   "max": 110.8
+  },
+  "python -I -S -c pass": {
+   "p50": 47.1,
+   "p95": 157.5,
+   "max": 224.8
+  },
+  "python -I (site) read stdin+json": {
+   "p50": 84.9,
+   "p95": 176.4,
+   "max": 196.2
+  },
+  "uv venv console-script trampoline": {
+   "p50": 162.7,
+   "p95": 266.4,
+   "max": 299.3
+  },
+  "powershell 5.1 -NoProfile -Command exit": {
+   "p50": 352.4,
+   "p95": 405.4,
+   "max": 476.5
+  },
+  "CODEX PATH: ps5.1 -NoProfile -Command <trampoline>": {
+   "p50": 536.8,
+   "p95": 667.2,
+   "max": 810.5
+  },
+  "git-bash -c exit": {
+   "p50": 94.8,
+   "p95": 221.1
+  },
+  "CLAUDE PATH (bash): bash -c <trampoline>": null,
+  "CLAUDE shell form: git-bash -c <trampoline>": {
+   "p50": 293.9,
+   "p95": 417.5
+  },
+  "CLAUDE exec form: trampoline direct": {
+   "p50": 208.6,
+   "p95": 279.1
+  },
+  "HTTP hook round-trip (localhost POST, server in daemon)": {
+   "p50": 1.1,
+   "p95": 3.3
+  },
+  "_bash": "D:\\Git\\bin\\bash.exe"
+ }
+}

@@ -1,0 +1,20 @@
+# Any MCP client without a dedicated profile: print-only (`arbiter setup --print generic_mcp`).
+schema_version: 1
+id: generic_mcp
+display_name: Other MCP client (manual)
+profile_version: 1
+detect:
+  any_path: []
+  any_command: []
+  any_glob: []
+mcp:
+  file: null
+  format: print_only
+hooks: null
+transcripts: null
+tools:
+  shell: ["Bash", "shell"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false

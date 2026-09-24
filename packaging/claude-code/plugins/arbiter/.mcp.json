@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "arbiter": {
+      "type": "stdio",
+      "command": "arbiter",
+      "args": ["mcp"]
+    }
+  }
+}

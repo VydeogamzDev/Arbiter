@@ -1,0 +1,116 @@
+{
+ "passed": true,
+ "gates": [
+  {
+   "gate": "parser_misreads",
+   "value": 0,
+   "threshold": "<= 0",
+   "passed": true
+  },
+  {
+   "gate": "contract_recall",
+   "value": 1.0,
+   "threshold": ">= 0.95",
+   "passed": true
+  },
+  {
+   "gate": "provenance_rejections_correct",
+   "value": 1.0,
+   "threshold": ">= 1.0",
+   "passed": true
+  },
+  {
+   "gate": "agent_cannot_set_status",
+   "value": 1.0,
+   "threshold": ">= 1.0",
+   "passed": true
+  },
+  {
+   "gate": "integrity_detection",
+   "value": 1.0,
+   "threshold": ">= 0.95",
+   "passed": true
+  },
+  {
+   "gate": "integrity_missed_file_deletions",
+   "value": 0,
+   "threshold": "<= 0",
+   "passed": true
+  },
+  {
+   "gate": "loop_precision",
+   "value": 1.0,
+   "threshold": ">= 0.8",
+   "passed": true
+  },
+  {
+   "gate": "continuation_supersedes",
+   "value": 0,
+   "threshold": "<= 0",
+   "passed": true
+  },
+  {
+   "gate": "false_pass",
+   "value": 0,
+   "threshold": "<= 0",
+   "passed": true
+  },
+  {
+   "gate": "gate_fires_on_non_claims",
+   "value": 0.0,
+   "threshold": "<= 0.02",
+   "passed": true
+  },
+  {
+   "gate": "false_complete_vs_stock",
+   "value": 0.0,
+   "threshold": "<= 0.5",
+   "passed": true
+  },
+  {
+   "gate": "gating_p95_ms",
+   "value": 17.2,
+   "threshold": "<= 300.0",
+   "passed": true
+  },
+  {
+   "gate": "block_wording_violations",
+   "value": 0,
+   "threshold": "<= 0",
+   "passed": true
+  },
+  {
+   "gate": "block_limit_respected",
+   "value": 1.0,
+   "threshold": ">= 1.0",
+   "passed": true
+  },
+  {
+   "gate": "session_isolation",
+   "value": 1.0,
+   "threshold": ">= 1.0",
+   "passed": true
+  }
+ ],
+ "seconds": 7.7,
+ "summary": {
+  "parser_fixtures": 51,
+  "parser_accuracy": 1.0,
+  "claims": 20,
+  "non_claims": 40,
+  "claim_recall": 1.0,
+  "epoch_prompts": 25,
+  "epoch_accuracy": 1.0,
+  "contract_requirements": 42,
+  "provenance_cases": 5,
+  "integrity_weakening_cases": 23,
+  "integrity_benign_cases": 5,
+  "integrity_false_alarms": 0,
+  "loop_cases": 14,
+  "loop_recall": 1.0,
+  "gate_traces": 30,
+  "stock_false_complete_weight": 38.0,
+  "arbiter_false_complete_weight": 0.0,
+  "gating_median_ms": 13.0
+ }
+}

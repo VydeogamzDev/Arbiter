@@ -1,0 +1,32 @@
+# Codex (CLI + desktop). Both share $CODEX_HOME (decision 0016).
+schema_version: 1
+id: codex
+display_name: Codex (desktop + CLI)
+profile_version: 1
+detect:
+  any_path: ["{codex_home}"]
+  any_command: ["codex"]
+  any_glob: ["{localappdata}/OpenAI/Codex", "{localappdata}/Microsoft/WindowsApps/OpenAI.Codex_*"]
+mcp:
+  file: "{codex_home}/config.toml"
+  format: toml_block
+  table: mcp_servers.arbiter
+hooks:
+  file: "{codex_home}/hooks.json"
+  format: json_hook_groups
+  transport: mcp_tool
+  trust_required: true
+  trust_hint: >-
+    Codex runs hooks only after you trust them once. In the Codex CLI run /hooks and trust the
+    Arbiter entries; in the Codex desktop app open Settings > Hooks. Until then Codex works at
+    tiers T1+T3 (tools and transcripts), without the completion gate.
+transcripts:
+  root: "{codex_home}/sessions"
+  glob: "**/rollout-*.jsonl"
+  parser: codex_rollout_v1
+tools:
+  shell: ["Bash", "exec_command", "exec"]
+completion_claim:
+  finish_tool: arbiter_finish_check
+effort_control: advisory
+native_tool_deferral: false

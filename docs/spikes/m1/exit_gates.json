@@ -1,0 +1,38 @@
+{
+ "cold_start_s": {
+  "method": "wmi",
+  "samples": [
+   0.983,
+   0.999,
+   1.04,
+   0.941,
+   0.936
+  ],
+  "p95": 1.04,
+  "gate": 2.0
+ },
+ "_platform": "win32",
+ "hook_mcp_ms": {
+  "n": 240,
+  "p50": 0.92,
+  "p95": 1.11,
+  "max": 4.97,
+  "gating_gate": 300,
+  "telemetry_gate": 50
+ },
+ "hook_http_ms": {
+  "n": 240,
+  "p50": 2.4,
+  "p95": 25.44,
+  "max": 30.53,
+  "gating_gate": 300,
+  "telemetry_gate": 50
+ },
+ "hook_command_fallback_ms": {
+  "n": 15,
+  "p50": 222.1,
+  "p95": 237.8,
+  "hard_deadline": 1500,
+  "eligible_for_gating": true
+ }
+}
