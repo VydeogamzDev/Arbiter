@@ -16,7 +16,7 @@ from arbiter_agent.daemon import lifecycle
 from arbiter_agent.daemon.client import DaemonClient
 from arbiter_agent.setup.doctor import gather, render
 from arbiter_agent.setup.setup import SetupOptions, run_setup
-from tests.conftest import spawn_daemon, wait_running
+from tests.conftest import cli_argv, spawn_daemon, wait_running
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -101,7 +101,7 @@ def test_setup_cli_end_to_end(tmp_path, home):
                ARBITER_CLIENT_HOME=str(tmp_path), ARBITER_NO_AUTOSTART="1")
     (tmp_path / "c").mkdir()
     (tmp_path / "d").mkdir()
-    base = lifecycle.daemon_argv(home)[:-2]
+    base = cli_argv(home)
     r = subprocess.run(base + ["setup", "--yes", "--no-start"], capture_output=True, text=True, env=env, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Codex" in r.stdout and "Claude Code" in r.stdout

@@ -39,11 +39,27 @@ def _in_job(pid):
     return bool(r.value)
 
 
+def _ensure_in_job():
+    """Put this test process in a job object if it isn't in one (e.g. on a CI runner), so the
+    escape check is meaningful everywhere. No kill-on-close flag: closing it harms nothing."""
+    import ctypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = ctypes.c_void_p
+    k32.GetCurrentProcess.restype = ctypes.c_void_p
+    k32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    job = k32.CreateJobObjectW(None, None)
+    assert job and k32.AssignProcessToJobObject(job, k32.GetCurrentProcess()), ctypes.get_last_error()
+    return job
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(not IS_WIN, reason="WMI launch is Windows-specific")
 def test_autostart_launches_outside_client_job(home):
     """Decision 0018: the lazily started daemon must not live in the caller's job/process tree."""
-    assert _in_job(__import__("os").getpid())  # this test process runs inside a job (Claude desktop)
+    if not _in_job(__import__("os").getpid()):  # Claude desktop runs us in a job; a CI runner may not
+        _ensure_in_job()
+    assert _in_job(__import__("os").getpid())
     t = time.perf_counter()
     assert lifecycle.ensure_daemon(home, wait=15)
     started_in = time.perf_counter() - t

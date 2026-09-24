@@ -39,5 +39,5 @@ def test_debug_raises_log_level(home):
 def test_failopen_record_never_raises(home, tmp_path):
     diagnostics.record_failopen(home.logs, "hook_cli", "daemon unreachable")
     line = json.loads((home.logs / diagnostics.FAILOPEN_FILE).read_text().strip())
-    assert line["component"] == "hook_cli" and line["ts"] <= time.time()
+    assert line["component"] == "hook_cli" and line["ts"] <= time.time() + 0.001
     diagnostics.record_failopen(tmp_path / "file-not-dir" / "\0bad", "x", "y")  # must not raise

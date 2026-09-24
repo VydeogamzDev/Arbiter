@@ -9,7 +9,7 @@ import pytest
 from arbiter_agent.clients.fake_host import FakeHost
 from arbiter_agent.daemon import lifecycle
 from arbiter_agent.daemon.client import DaemonClient
-from tests.conftest import spawn_daemon, wait_running
+from tests.conftest import cli_argv, spawn_daemon, wait_running
 
 
 def status(home):
@@ -21,7 +21,7 @@ NO_AUTOSTART = {**os.environ, "ARBITER_NO_AUTOSTART": "1"}
 
 
 def mcp_session(home):
-    argv = lifecycle.daemon_argv(home)[:-2] + ["mcp"]
+    argv = cli_argv(home) + ["mcp"]
     return subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, encoding="utf-8", env=NO_AUTOSTART)
 
@@ -96,7 +96,7 @@ def test_transcript_watcher_dedupes_against_hooks_and_replays(daemon, tmp_path):
 
 
 def test_hook_cli_fails_open_fast_when_daemon_down(home):
-    argv = lifecycle.daemon_argv(home)[:-2] + ["hook", "codex", "Stop"]
+    argv = cli_argv(home) + ["hook", "codex", "Stop"]
     t = time.perf_counter()
     out = subprocess.run(argv, input='{"hook_event_name":"Stop","session_id":"s"}', capture_output=True, text=True,
                          timeout=20, env=NO_AUTOSTART)
@@ -107,7 +107,7 @@ def test_hook_cli_fails_open_fast_when_daemon_down(home):
 
 
 def test_hook_cli_garbage_input_fails_open(home):
-    argv = lifecycle.daemon_argv(home)[:-2] + ["hook", "codex"]
+    argv = cli_argv(home) + ["hook", "codex"]
     out = subprocess.run(argv, input="{not json", capture_output=True, text=True, timeout=20, env=NO_AUTOSTART)
     assert out.returncode == 0 and out.stdout == ""
 

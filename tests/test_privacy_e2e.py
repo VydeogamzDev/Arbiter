@@ -6,6 +6,7 @@ from arbiter_agent.clients.fake_host import FakeHost
 from arbiter_agent.daemon import lifecycle
 from arbiter_agent.daemon.client import DaemonClient
 from arbiter_agent.state.store import connect
+from tests.conftest import cli_argv
 
 SECRET = "ghp_" + "Z9y8X7w6V5u4T3s2R1q0" * 2
 PROMPT_SECRET = "sk-ant-api03-" + "Sup3rS3cr3tV4lu3" * 3
@@ -21,7 +22,7 @@ def all_bytes(home) -> bytes:
 
 @pytest.mark.parametrize("transport", ["mcp", "http", "command"])
 def test_secrets_never_reach_disk(daemon, tmp_path, transport):
-    home, _ = daemon
+    home, proc = daemon
     with FakeHost(home, client="codex", transport=transport, cwd=str(tmp_path), transcript_dir=tmp_path / "tr",
                   autostart=False) as h:
         h.prompt(f"use this key {PROMPT_SECRET} please")
@@ -33,6 +34,7 @@ def test_secrets_never_reach_disk(daemon, tmp_path, transport):
         c.request("watch_poll")
         assert c.request("status")["events"] >= 4
     lifecycle.stop(home)  # flush WAL/logs to disk before scanning
+    proc.wait(15)         # Windows: the process still holds its lock region until it exits
     data = all_bytes(home)
     assert SECRET.encode() not in data
     assert PROMPT_SECRET.encode() not in data
@@ -40,10 +42,10 @@ def test_secrets_never_reach_disk(daemon, tmp_path, transport):
 
 
 def test_excluded_project_never_stored(daemon, tmp_path):
-    home, _ = daemon
+    home, proc = daemon
     private = tmp_path / "private-client-work"
     private.mkdir()
-    argv = lifecycle.daemon_argv(home)[:-2] + ["exclude", str(private)]
+    argv = cli_argv(home) + ["exclude", str(private)]
     assert subprocess.run(argv, capture_output=True, text=True).returncode == 0
     marker = "UNIQUE-MARKER-7f3a9c"
     with FakeHost(home, client="claude_code", transport="http", cwd=str(private), transcript_dir=tmp_path,
@@ -60,6 +62,7 @@ def test_excluded_project_never_stored(daemon, tmp_path):
     assert st["events"] == 0 and st["sessions"] == 0
     assert st["scope_skips"]["cli_exclude"] == len(h.calls)
     lifecycle.stop(home)
+    proc.wait(15)
     assert marker.encode() not in all_bytes(home).replace(str(h.transcript_path).encode(), b"")
     conn = connect(home.db, readonly=True)
     try:

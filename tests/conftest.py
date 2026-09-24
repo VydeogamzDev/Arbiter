@@ -36,6 +36,12 @@ def home(tmp_path: Path) -> ArbiterPaths:
     return get_paths(tmp_path / "arbiter-home").ensure()
 
 
+def cli_argv(paths: ArbiterPaths) -> list[str]:
+    """Plain `arbiter --home ...` argv for CLI subprocesses. Unlike lifecycle.daemon_argv, it carries
+    no --client-env, so the subprocess uses the env the test passes it."""
+    return [sys.executable, "-m", "arbiter_agent", "--home", str(paths.root)]
+
+
 def spawn_daemon(paths: ArbiterPaths, extra_env: dict[str, str] | None = None) -> subprocess.Popen[bytes]:
     """Start a daemon as a plain child (tests control its lifetime; production uses WMI)."""
     env = dict(os.environ, **(extra_env or {}))

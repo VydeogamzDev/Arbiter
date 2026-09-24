@@ -104,7 +104,8 @@ def test_pipe_dacl_is_current_user_only(daemon):
     sid = current_user_sid()
     assert sddl.startswith("D:P")  # protected: no inherited ACEs
     aces = sddl[3:].strip("()").split(")(")
-    assert len(aces) == 1 and aces[0].endswith(sid), sddl
+    owner_ok = aces[0].endswith(sid) or (sid.endswith("-500") and aces[0].endswith(";LA"))  # LA = RID 500 alias
+    assert len(aces) == 1 and owner_ok, sddl
 
 
 @pytest.mark.skipif(IS_WIN, reason="POSIX socket permissions")

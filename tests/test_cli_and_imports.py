@@ -4,7 +4,7 @@ import sys
 
 import yaml
 
-from arbiter_agent.daemon import lifecycle
+from tests.conftest import cli_argv
 
 CHECK_IMPORTS = """
 import sys
@@ -22,7 +22,7 @@ def test_shim_import_path_is_stdlib_only():
 
 
 def _arbiter(home, *args, **kw):
-    return subprocess.run(lifecycle.daemon_argv(home)[:-2] + list(args), capture_output=True, text=True, **kw)
+    return subprocess.run(cli_argv(home) + list(args), capture_output=True, text=True, **kw)
 
 
 def test_config_validate_reports_errors(home):
