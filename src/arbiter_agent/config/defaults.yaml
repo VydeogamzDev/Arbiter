@@ -71,6 +71,9 @@ semif:
     - {min_vram_gb: 12, model: K2-Horizon-7B, quant: Q4_K_M}
     - {min_vram_gb: 16, model: K2-Horizon-7B, quant: Q6_K}
   adapters: {}                  # decision family -> fine-tuned adapter or encoder checkpoint (research track R6)
+  llama_cpp_url: http://127.0.0.1:8088   # loopback llama-server for decoder tiers (M7.2)
+  model_revision: null          # pin: results from any other revision are rejected (§7.3)
+  shadow: true                  # log sensor judgments next to rule decisions (never applied)
   shared_state_enabled: false
   nvidia_q8_enabled: false
   mirror_binary_questions: true

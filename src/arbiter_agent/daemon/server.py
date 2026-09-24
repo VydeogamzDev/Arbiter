@@ -110,6 +110,16 @@ class Daemon:
                                     config=self.config, reducer=self.reducer, breakers=self.breakers,
                                     flags=self.flags)
         self.ingestor.observers.append(self.engine.wake)
+        self.sensor = None
+        self.shadow = None
+        if self.flags.enabled("semif"):
+            from arbiter_agent.semif.service import SemIfService
+            from arbiter_agent.semif.shadow import ShadowHarness
+
+            self.sensor = SemIfService.from_config(self.config)
+            if self.config.get("semif.shadow", True):
+                self.shadow = ShadowHarness(self.sensor, self.writer)
+                self.engine.decision_listeners.append(self.shadow.on_decision)
         self.retrieval = None
         if self.flags.enabled("repo_index"):
             from arbiter_agent.retrieval.service import RetrievalService
@@ -127,6 +137,8 @@ class Daemon:
             self.engine.start()
         if self.retrieval is not None:
             self.retrieval.start()
+        if self.sensor is not None:
+            self.sensor.start()
         if self.flags.enabled("transcript_watchers"):
             self.watchers.start()
         if self.flags.enabled("retention") and not self.degraded:
@@ -267,6 +279,9 @@ class Daemon:
             return self.engine_call(method, params)
         if method == "retrieve":
             return self.retrieve(params)
+        if method == "sensor_status":
+            return {"sensor": self.sensor.health() if self.sensor else None,
+                    "shadow": self.shadow.stats if self.shadow else None}
         raise ValueError(f"unknown method '{method}'")
 
     # ------------------------------------------------------------------ retrieval (M6)
@@ -451,6 +466,8 @@ class Daemon:
         self.engine.stop()
         if self.retrieval is not None:
             self.retrieval.stop()
+        if self.sensor is not None:
+            self.sensor.stop()
         if self.http:
             self.http.stop()
         self._unblock_accept()

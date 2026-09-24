@@ -44,6 +44,7 @@ arbiter doctor                     # shows what's verified for each client
 | `arbiter verify --init`, then `--trust`, then `arbiter verify` | run your repo's verification commands as Arbiter-observed evidence (`.arbiter/verify.yaml`; trusting it needs an interactive terminal) |
 | `arbiter eval` | run the built-in evaluation corpus against the §20.17 gates |
 | `arbiter exclude <path>` | stop recording sessions under a path |
+| `arbiter semif status` / `enable` / `bench` | optional semantic sensor: plans a model tier for your GPU (writes config only with `--yes`, never downloads by itself). Until measured it only logs judgments beside the rules and never changes a decision |
 
 Agents get these MCP tools:
 - **task state:** `arbiter_contract_propose`, `arbiter_contracts`, `arbiter_scope_change`, `arbiter_finish_check`, `arbiter_verify`;

@@ -8,6 +8,9 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+encoder = ["gliner2"]      # tier 0 sensor (GLiNER2.5-Decide); pulls PyTorch
+
 [project.scripts]
 arbiter = "arbiter_agent.cli:main"
 

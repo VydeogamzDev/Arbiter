@@ -210,6 +210,74 @@ def cmd_index(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_semif(a: argparse.Namespace) -> int:
+    from arbiter_agent.config import load_config
+    from arbiter_agent.paths import get_paths
+    from arbiter_agent.semif import hardware
+
+    paths = get_paths()
+    config = load_config(paths)
+    if a.action == "bench":
+        from arbiter_agent.semif import benchmark
+        from arbiter_agent.semif.service import SemIfService
+
+        svc = SemIfService.from_config(config).start()
+        try:
+            report = benchmark.run(svc)
+        finally:
+            svc.stop()
+        print(json.dumps(report, indent=1) if a.json else benchmark.render(report))
+        return 0
+    plan = hardware.plan(config)
+    if a.action == "status":
+        print(json.dumps({"enabled": config.get("semif.enabled"), "encoder": config.get("semif.encoder"),
+                          "plan": plan.to_dict()}, indent=1, default=str))
+        try:
+            print(json.dumps(_call("sensor_status", {}, timeout=5), indent=1))
+        except SystemExit:
+            pass
+        return 0
+    if a.action == "disable":
+        _write_semif_config(paths, {"enabled": False, "encoder": {"enabled": False}})
+        print("sensor disabled (rules only); restart the daemon to apply: `arbiter daemon restart`")
+        return 0
+    # enable
+    print("Sensor plan:")
+    print(f"  GPUs: {', '.join(f'{g.name} ({g.vram_gb} GB)' for g in plan.gpus) or 'none detected'}")
+    print(f"  tier 0 encoder (CPU OK): {'available' if plan.encoder_available else 'needs the gliner2 package'}")
+    print(f"  decoder tier: {plan.decoder or 'none (needs a GPU)'}")
+    for n in plan.notes:
+        print(f"  note: {n}")
+    if plan.decoder:
+        print("  decoder runtime: start llama-server with the tier's GGUF on 127.0.0.1:8088, e.g.\n"
+              "    llama-server -m <model>.gguf --port 8088 --host 127.0.0.1 -c 8192 -ngl 99")
+    if not a.yes:
+        print("\nNothing changed. Re-run with --yes to write this to Arbiter's config.")
+        return 0
+    update: dict[str, Any] = {"encoder": {"enabled": bool(plan.encoder_available)}}
+    if plan.decoder:
+        update["enabled"] = True
+    _write_semif_config(paths, update)
+    print("written; restart the daemon to apply: `arbiter daemon restart`")
+    return 0
+
+
+def _write_semif_config(paths: Any, update: dict[str, Any]) -> None:
+    import yaml
+
+    from arbiter_agent.paths import write_private
+
+    cfg = paths.config_file
+    data = (yaml.safe_load(cfg.read_text(encoding="utf-8")) if cfg.exists() else None) or {}
+    sem = data.setdefault("semif", {})
+    for k, v in update.items():
+        if isinstance(v, dict):
+            sem.setdefault(k, {}).update(v)
+        else:
+            sem[k] = v
+    write_private(cfg, yaml.safe_dump(data, sort_keys=False).encode())
+
+
 def cmd_eval(a: argparse.Namespace) -> int:
     from arbiter_agent.eval import gates
 
@@ -277,6 +345,12 @@ def add_parsers(sub: Any) -> None:
     s.add_argument("--keep-days", type=float, default=7.0, help="gc: keep unreferenced analysis this long")
     session_args(s)
     s.set_defaults(fn=cmd_index)
+
+    s = sub.add_parser("semif", help="semantic sensor: status, enable (plan tiers), disable, bench")
+    s.add_argument("action", nargs="?", default="status", choices=["status", "enable", "disable", "bench"])
+    s.add_argument("--yes", action="store_true", help="enable: write the plan to config")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_semif)
 
     s = sub.add_parser("eval", help="run the evaluation corpus and the numeric gates (spec 20.17)")
     s.add_argument("--corpus", help="corpus directory (default: the packaged corpus)")

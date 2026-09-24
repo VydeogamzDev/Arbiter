@@ -11,7 +11,7 @@ Conventions:
 
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
-       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf → M8 breakers → M9 advisory
+       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers → M9 advisory
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
@@ -212,6 +212,11 @@ Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends
 - Latency is stable per §20.17.
 - Rules-only mode is fully functional with the null backend.
 - The shipped tier table is backed by the benchmark: each tier beats the one below it, and each beats the rules, on its decision families.
+
+**Progress (2026-09-24, decision [0029](decisions/0029-m7-sensor-service.md)):**
+- **Done without a GPU:** M7.1, M7.1b (the encoder backend against a fake model), M7.2's llama.cpp client (tested against a mock `llama-server`), M7.3, M7.4, M7.5, M7.6 (`arbiter semif status|enable|disable|bench`; it plans tiers and never downloads anything itself), M7.7 (engine `decision_listeners` feeding `sensor_log`) and M7.8 (the benchmark harness over the eval corpus).
+- **Met in tests** (`tests/test_semif.py`): 0 malformed results consumed, saturation never blocks a hook, rules-only mode with the null backend.
+- **Pending on the 3080 Ti and model downloads:** real llama.cpp runs, the BF16 reference backend, OOM recovery on a real server, the latency exit, and the tier-table benchmark on the actual quantized files. Until then the sensor is shadow-only.
 
 ## M8 — Policy core + full circuit breakers
 Stage 4 · Build step 23 · **Required before any automatic stage** (decision 0009)

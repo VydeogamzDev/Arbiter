@@ -79,6 +79,9 @@ class SessionEngine:
         # Called as fn(session_id, cwd) the first time a session reports a working directory
         # (the retrieval service warms that repository's index). Must only enqueue work.
         self.cwd_listeners: list[Callable[[str, str], None]] = []
+        # Called as fn(session_id, kind, info) after a rule decision ("prompt": epoch decision,
+        # "stop": claim classification). The sensor shadow harness listens. Must only enqueue.
+        self.decision_listeners: list[Callable[[str, str, dict[str, Any]], None]] = []
         self.stats: dict[str, int] = {"events": 0, "errors": 0, "intents": 0, "facts": 0, "epochs": 0}
 
     def enabled(self, name: str) -> bool:
@@ -304,9 +307,14 @@ class SessionEngine:
             self._confirm_epoch(conn, st, ordinal, dec.reason)
         elif dec.action == "candidate":
             self._save(conn, st, candidate_ordinal=ordinal)
+        prev_text = None
+        if self.decision_listeners and ordinal > 1:
+            prev = intent_log.load_intents(conn, st["session_id"], ordinal - 1)
+            prev_text = prev[0].text if prev else None
         it = intent_log.append_intent(conn, st["session_id"], ordinal, int(st["goal_epoch"]), text, source,
                                       self.keyer)
         self.stats["intents"] += 1
+        self._notify(st["session_id"], "prompt", {"text": text, "previous": prev_text, "decision": dec.action})
         extracted = contract_coverage.extract(it) if self.enabled("contracts") else []
         if extracted:
             contract_compiler.propose(conn, st["session_id"], int(st["goal_epoch"]), extracted,
@@ -619,6 +627,7 @@ class SessionEngine:
             message = payload.get("last_assistant_message") or self._last_agent_response(sid)
             claim = claim_detection.classify(message,
                                              finish_check_called=fc is not None and fc == st["intent_count"])
+            self._notify(sid, "stop", {"message": message, "claim": claim.claim})
             if not claim.gated and not self.config.get("completion.record_non_claims", False):
                 self._note_verdict(sid, claim.claim, "not_gated")
                 return {}
@@ -639,6 +648,13 @@ class SessionEngine:
             return {}
         finally:
             self.breakers.hook_latency.record_latency((time.monotonic() - t0) * 1000.0)
+
+    def _notify(self, sid: str, kind: str, info: dict[str, Any]) -> None:
+        for fn in self.decision_listeners:
+            try:
+                fn(sid, kind, info)
+            except Exception:
+                self.stats["errors"] += 1
 
     def _last_agent_response(self, sid: str) -> str | None:
         """Final assistant text for clients whose stop payload lacks it (Cursor sends it on a separate
