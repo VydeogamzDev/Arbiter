@@ -110,6 +110,13 @@ class Daemon:
                                     config=self.config, reducer=self.reducer, breakers=self.breakers,
                                     flags=self.flags)
         self.ingestor.observers.append(self.engine.wake)
+        self.retrieval = None
+        if self.flags.enabled("repo_index"):
+            from arbiter_agent.retrieval.service import RetrievalService
+
+            self.retrieval = RetrievalService(self.paths.data, self.key, self.config,
+                                              redaction_enabled=self.flags.enabled("redaction"))
+            self.engine.cwd_listeners.append(lambda sid, cwd: self.retrieval.warm(cwd) if self.retrieval else None)
         self.ipc_token = rotate_token(self.paths.token_file)  # shim tokens rotate on every start
         self.endpoint = ipc.listen(self.paths.pipe_address, prefer=str(self.config.get("daemon.ipc", "auto")))
         if self.flags.enabled("http_hooks"):
@@ -118,6 +125,8 @@ class Daemon:
         self.clients.start()
         if not self.degraded and self.flags.enabled("task_state"):
             self.engine.start()
+        if self.retrieval is not None:
+            self.retrieval.start()
         if self.flags.enabled("transcript_watchers"):
             self.watchers.start()
         if self.flags.enabled("retention") and not self.degraded:
@@ -256,7 +265,40 @@ class Daemon:
             return {"stopping": True}
         if method in ENGINE_METHODS:
             return self.engine_call(method, params)
+        if method == "retrieve":
+            return self.retrieve(params)
         raise ValueError(f"unknown method '{method}'")
+
+    # ------------------------------------------------------------------ retrieval (M6)
+    def retrieve(self, params: dict[str, Any]) -> Any:
+        if self.retrieval is None:
+            raise RuntimeError("repository indexes are disabled (feature flag repo_index)")
+        sid = self.engine.resolve_session(params)
+        cwd = (self.engine.session_cwd(sid) if sid else None) or params.get("cwd")
+        if not cwd:
+            raise LookupError("no working directory: run this from the repository, or pass session_id")
+        op = str(params.get("op") or "search")
+        r = self.retrieval
+        if op == "search":
+            out = r.search(cwd, str(params.get("query") or ""), int(params.get("limit") or 20), params.get("path_glob"))
+            n = len(out.get("hits", []))
+        elif op == "symbol":
+            out = r.symbol(cwd, str(params.get("name") or ""), int(params.get("limit") or 30))
+            n = len(out.get("definitions", [])) + len(out.get("references", []))
+        elif op == "related":
+            out = r.related(cwd, str(params.get("path") or ""))
+            n = len(out.get("imports", [])) + len(out.get("importers", [])) + len(out.get("tests", []))
+        elif op == "status":
+            return r.status(cwd)
+        elif op == "gc":
+            return r.gc(cwd, float(params.get("keep_days", 7)))
+        else:
+            raise ValueError(f"unknown retrieval op '{op}'")
+        if sid:
+            self.engine.record_retrieval(sid, {"op": op, "results": n, "index_version": out["index"]["version"],
+                                               "index_generation": out["index"]["generation"],
+                                               "index_head": out["index"]["head"] or ""})
+        return out
 
     # ------------------------------------------------------------------ task state (M3/M4)
     def _session(self, params: dict[str, Any], required: bool = True) -> str | None:
@@ -395,6 +437,7 @@ class Daemon:
             "http_stats": self.http.stats if self.http else None,
             "clients": self.clients.summary(), "watching": self.clients.watch_clients,
             "engine": self.engine.summary(), "gate_mode": self.config.get("completion.gate_mode", "annotate"),
+            "retrieval": self.retrieval.summary() if self.retrieval else None,
             "client_homes": {k: os.environ.get(k) for k in ("CODEX_HOME", "CLAUDE_CONFIG_DIR", "ARBITER_CLIENT_HOME")},
         }
 
@@ -406,6 +449,8 @@ class Daemon:
         log.info("daemon draining")
         self.watchers.stop()
         self.engine.stop()
+        if self.retrieval is not None:
+            self.retrieval.stop()
         if self.http:
             self.http.stop()
         self._unblock_accept()

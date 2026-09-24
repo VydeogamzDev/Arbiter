@@ -76,6 +76,9 @@ class SessionEngine:
         self._cwd_hint: dict[str, str] = {}
         self._integrity_cache: dict[str, tuple[int, dict[str, Any]]] = {}   # session -> (change seq, report)
         self._baseline_pending: set[str] = set()
+        # Called as fn(session_id, cwd) the first time a session reports a working directory
+        # (the retrieval service warms that repository's index). Must only enqueue work.
+        self.cwd_listeners: list[Callable[[str, str], None]] = []
         self.stats: dict[str, int] = {"events": 0, "errors": 0, "intents": 0, "facts": 0, "epochs": 0}
 
     def enabled(self, name: str) -> bool:
@@ -226,7 +229,14 @@ class SessionEngine:
         bg: list[tuple[str, str, int]] = []
         cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else self._cwd_hint.get(sid)
         if cwd and cwd != st.get("cwd"):
+            first = not st.get("cwd")
             self._save(conn, st, cwd=cwd)
+            if first:
+                for fn in self.cwd_listeners:
+                    try:
+                        fn(sid, cwd)
+                    except Exception:
+                        self.stats["errors"] += 1
         seq = int(r["seq"])
         if st.get("cwd") and not st.get("baseline_id") and sid not in self._baseline_pending:
             self._baseline_pending.add(sid)
@@ -878,6 +888,26 @@ class SessionEngine:
             return {"ok": False, "root": root, "path": str(path), "error": str(exc)}
         return {"ok": True, "root": root, "path": str(path), "sha256": sha,
                 "commands": [c.__dict__ for c in cmds]}
+
+    def record_retrieval(self, sid: str, info: dict[str, Any]) -> None:
+        """Audit a retrieval (op, index stamp, result count; no content) as an internal event."""
+        def job(conn: sqlite3.Connection) -> None:
+            st = self._state(conn, sid, create=False)
+            if st is not None:
+                self._internal_event(conn, st, "internal.retrieval", info, f"{sid}:retrieval:{time.time_ns()}")
+
+        try:
+            self.writer.run(job, timeout=2)
+        except Exception:
+            pass
+
+    def session_cwd(self, sid: str) -> str | None:
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+        finally:
+            rc.close()
+        return str(st["cwd"]) if st and st.get("cwd") else None
 
     def set_gate_mode(self, sid: str, mode: str) -> dict[str, Any]:
         if mode not in ("annotate", "block", "default"):

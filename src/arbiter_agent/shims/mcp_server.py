@@ -109,6 +109,30 @@ TOOLS += [
             **_SESSION}},
     },
 ]
+TOOLS += [
+    {
+        "name": "arbiter_search",
+        "description": "Search this repository (full-text over code and docs, plus file paths) using Arbiter's index. "
+                       "Results are fresh (the index updates before answering), exclude secrets and generated files, "
+                       "and cite path:line.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            "path_glob": {"type": "string", "description": "Optional filter, e.g. 'src/**/*.py'."}, **_SESSION},
+            "required": ["query"]},
+    },
+    {
+        "name": "arbiter_symbol",
+        "description": "Find where a function, class or type is defined, where it's referenced, and which files import "
+                       "its module.",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, **_SESSION}, "required": ["name"]},
+    },
+    {
+        "name": "arbiter_related",
+        "description": "For one file: what it imports, which files import it, and which tests cover it.",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, **_SESSION}, "required": ["path"]},
+    },
+]
+RETRIEVAL_TOOLS = {"arbiter_search": "search", "arbiter_symbol": "symbol", "arbiter_related": "related"}
 TASK_TOOLS = {"arbiter_contract_propose": "contract_propose", "arbiter_contracts": "session_status",
               "arbiter_scope_change": "scope_change", "arbiter_finish_check": "finish_check"}
 
@@ -172,6 +196,8 @@ class MCPShim:
                 return self._text(f"Arbiter daemon unavailable ({exc.reason}); starting it in the background.")
         if name in TASK_TOOLS or name == "arbiter_verify":
             return self._task_tool(name, args)
+        if name in RETRIEVAL_TOOLS:
+            return self._retrieval_tool(name, args)
         raise KeyError(name)
 
     def _binding(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -205,6 +231,25 @@ class MCPShim:
             return self._text(f"Arbiter daemon unavailable ({exc.reason}); nothing was recorded.", is_error=True)
         except Exception as exc:
             return self._text(f"Arbiter: {exc}", is_error=True)
+
+    def _retrieval_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        params = {**args, **self._binding(args), "op": RETRIEVAL_TOOLS[name]}
+        try:
+            with self._lock:
+                c = self._client or DaemonClient(self.paths, component="mcp_shim")
+                self._client = c
+            res = c.request("retrieve", params, timeout=20.0)
+            return self._text(render_retrieval(name, res))
+        except DaemonError as exc:
+            return self._text(f"Arbiter: {exc.error}", is_error=True)
+        except DaemonUnavailable as exc:
+            with self._lock:
+                if self._client:
+                    self._client.close()
+                self._client = None
+            record_failopen(self.paths.logs, "mcp_shim", exc.reason)
+            trigger_launch(self.paths)
+            return self._text(f"Arbiter daemon unavailable ({exc.reason}).", is_error=True)
 
     def _verify(self, c: DaemonClient, params: dict[str, Any]) -> str:
         from arbiter_agent.completion import verify_runner as vr
@@ -291,6 +336,42 @@ class MCPShim:
         if self._client:
             self._client.close()
         return 0
+
+
+def render_retrieval(name: str, res: Any) -> str:
+    if not isinstance(res, dict):
+        return json.dumps(res)
+    idx = res.get("index") or {}
+    head = f"[index v{idx.get('version')} gen {idx.get('generation')} @ {str(idx.get('head') or 'no-git')[:10]}]"
+    lines: list[str] = []
+    if res.get("error"):
+        return f"{res['error']} {head}"
+    if name == "arbiter_search":
+        for h in res.get("hits", []):
+            snippet = " | ".join(s.strip() for s in str(h.get("snippet", "")).splitlines() if s.strip())[:200]
+            lines.append(f"{h['path']}:{h['line']}  {snippet}" if snippet else f"{h['path']}  (path match)")
+        if not lines:
+            lines.append("no matches")
+    elif name == "arbiter_symbol":
+        for d in res.get("definitions", []):
+            sig = d.get("signature") or ""
+            lines.append(f"def {d['kind']} {d['path']}:{d['line']}-{d['end_line']}  {sig}".rstrip())
+        for r in res.get("references", [])[:30]:
+            lines.append(f"ref {r['path']}:{r['line']} ({r['channel']})")
+        if res.get("importers"):
+            lines.append("imported by: " + ", ".join(res["importers"][:20]))
+        if not lines:
+            lines.append("no definition found")
+    else:
+        for key, label in (("imports", "imports"), ("importers", "imported by"), ("tests", "tests"),
+                           ("tests_cover", "covers")):
+            if res.get(key):
+                lines.append(f"{label}: " + ", ".join(res[key][:30]))
+        if not lines:
+            lines.append("no related files found")
+    if res.get("note"):
+        lines.append(f"note: {res['note']}")
+    return "\n".join(lines + [head])
 
 
 def render_task_result(name: str, res: Any) -> str:

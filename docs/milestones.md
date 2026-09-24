@@ -11,7 +11,7 @@ Conventions:
 
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
-       → M5 coverage ✅ → M6 indexes → M7 SemIf → M8 breakers → M9 advisory
+       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf → M8 breakers → M9 advisory
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
@@ -170,8 +170,8 @@ Build step 19 · Decision [0027](decisions/0027-m5-client-profiles.md)
 - Hook dialects (T2, command transport) exist for Cursor (annotate only: its stop can't be held back), VS Code/Copilot and Gemini CLI.
 - Fixtures are derived from documented formats and should be replaced with real recordings as the clients are installed. T3 transcripts remain Codex and Claude Code only.
 
-## M6 — Repository indexes
-Build step 20 · Tier T1
+## M6 — Repository indexes ✅ Done 2026-09-24
+Build step 20 · Tier T1 · Decision [0028](decisions/0028-m6-repository-indexes.md)
 
 - **M6.1** Lexical and path index (`retrieval/lexical`).
 - **M6.2** Symbol, AST, import, and call graph (`symbols`, `ast_graph`, `dependencies`, `state/dependency_graph`).
@@ -181,6 +181,12 @@ Build step 20 · Tier T1
 - **M6.6** Retrieval exposed as MCP tools.
 
 **Exit:** no stale results after edits or branch switches, secrets never indexed, and the index version recorded on every retrieval.
+
+**Result:** met (`tests/test_retrieval.py`).
+- **No stale results:** every query refreshes its view first. This holds after same-second edits, deletions and branch switches both ways (switching back re-analyzes nothing), across git worktrees, and when a time-budget cut leaves files pending.
+- **Secrets never indexed:** `.env` files, keys and credential stores are never read, and detected secrets are redacted before storage. The index database files contain no secret bytes.
+- **Index version recorded:** every result carries `{version, generation, head}`, and session retrievals are audited as `internal.retrieval` events.
+- **Retrieval surface:** MCP tools `arbiter_search`, `arbiter_symbol` and `arbiter_related`, plus CLI `arbiter search` and `arbiter index`. Embeddings stay off (interface only).
 
 ## M7 — SemIf service (semantic sensor)
 Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends-model-tiers-and-fine-tuning.md) · Research: [semantic-sensor-models](research/semantic-sensor-models.md)

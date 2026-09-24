@@ -2978,6 +2978,9 @@ retrieval:
   broaden_on_no_progress: true
   branch_overlay_indexes: true
   secret_indexing: deny_by_default
+  refresh_budget_s: 3.0         # per-query incremental refresh budget; unindexed changes are left out, never stale
+  include_generated: false      # vendored/generated trees, lockfiles, minified bundles
+  embeddings: "off"             # optional vector channel (M6.5); only "off" ships
 
 review:
   security_floor: high

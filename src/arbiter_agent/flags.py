@@ -35,6 +35,7 @@ _FLAGS = [
     Flag("completion_gate", True, "M4", "Completion gate (annotate by default; block is opt-in)"),
     Flag("circuit_breakers", True, "M4", "Minimal breakers: hook latency, gate errors, parsers"),
     Flag("status_injection", True, "M4", "Hook status summaries (also needs ui.inject_status)"),
+    Flag("repo_index", True, "M6", "Repository indexes and Arbiter retrieval tools"),
     Flag("semif", False, "M7", "SemIf inference service"),
     Flag("reasoning_advisor", False, "M9", "Reasoning scheduler recommendations"),
     Flag("tool_gateway", False, "M10", "Stable tool gateway"),

@@ -45,7 +45,12 @@ arbiter doctor                     # shows what's verified for each client
 | `arbiter eval` | run the built-in evaluation corpus against the §20.17 gates |
 | `arbiter exclude <path>` | stop recording sessions under a path |
 
-Agents get these MCP tools: `arbiter_contract_propose`, `arbiter_contracts`, `arbiter_scope_change`, `arbiter_finish_check`, `arbiter_verify`, and `arbiter_status`.
+Agents get these MCP tools:
+- **task state:** `arbiter_contract_propose`, `arbiter_contracts`, `arbiter_scope_change`, `arbiter_finish_check`, `arbiter_verify`;
+- **repository retrieval:** `arbiter_search`, `arbiter_symbol`, `arbiter_related`;
+- **health:** `arbiter_status`.
+
+Retrieval results are always fresh, skip secrets and generated files, and cite `path:line`. Use `arbiter search "..."` in a terminal for the same results.
 
 What the gate checks:
 - every active contract is PASS (or waived by you);

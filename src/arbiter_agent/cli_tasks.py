@@ -181,6 +181,35 @@ def cmd_verify(a: argparse.Namespace) -> int:
     return 0 if all(r.status == "pass" for r in results) else 3
 
 
+def cmd_search(a: argparse.Namespace) -> int:
+    from arbiter_agent.shims.mcp_server import render_retrieval
+
+    b = _bind(a)
+    if a.symbol:
+        res = _call("retrieve", {**b, "op": "symbol", "name": a.query}, timeout=60)
+        print(render_retrieval("arbiter_symbol", res))
+    elif a.related:
+        res = _call("retrieve", {**b, "op": "related", "path": a.query}, timeout=60)
+        print(render_retrieval("arbiter_related", res))
+    else:
+        res = _call("retrieve", {**b, "op": "search", "query": a.query, "limit": a.limit}, timeout=60)
+        print(render_retrieval("arbiter_search", res))
+    return 0
+
+
+def cmd_index(a: argparse.Namespace) -> int:
+    b = _bind(a)
+    if a.action == "gc":
+        print(json.dumps(_call("retrieve", {**b, "op": "gc", "keep_days": a.keep_days}, timeout=120), indent=1))
+        return 0
+    res = _call("retrieve", {**b, "op": "status"}, timeout=300)
+    idx = res["index"]
+    print(f"index v{idx['version']}  generation {idx['generation']}  files {idx['files']}  pending {idx['pending']}  "
+          f"head {str(idx['head'] or 'no git')[:12]}")
+    print(f"root {idx['root']}\ndb   {res['db']}")
+    return 0
+
+
 def cmd_eval(a: argparse.Namespace) -> int:
     from arbiter_agent.eval import gates
 
@@ -234,6 +263,20 @@ def add_parsers(sub: Any) -> None:
     s.add_argument("--only", nargs="+", help="run only these command names")
     session_args(s)
     s.set_defaults(fn=cmd_verify)
+
+    s = sub.add_parser("search", help="search this repository with Arbiter's index (or --symbol / --related)")
+    s.add_argument("query", help="search text, a symbol name (--symbol) or a file path (--related)")
+    s.add_argument("--symbol", action="store_true", help="find a symbol's definitions and references")
+    s.add_argument("--related", action="store_true", help="show a file's imports, importers and tests")
+    s.add_argument("--limit", type=int, default=20)
+    session_args(s)
+    s.set_defaults(fn=cmd_search)
+
+    s = sub.add_parser("index", help="repository index status (refreshes it) or garbage collection")
+    s.add_argument("action", nargs="?", default="status", choices=["status", "gc"])
+    s.add_argument("--keep-days", type=float, default=7.0, help="gc: keep unreferenced analysis this long")
+    session_args(s)
+    s.set_defaults(fn=cmd_index)
 
     s = sub.add_parser("eval", help="run the evaluation corpus and the numeric gates (spec 20.17)")
     s.add_argument("--corpus", help="corpus directory (default: the packaged corpus)")
