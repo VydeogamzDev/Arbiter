@@ -52,6 +52,9 @@ class TranscriptTailer:
         self.records = 0
         self.excluded = False
         self.last_poll_ok: float | None = None
+        # The background loop and `watch_poll` requests can poll the same tailer; without this they
+        # both advance the offset past EOF, which then looks like truncation and re-reads the file.
+        self._poll_lock = threading.Lock()
 
     def _load_offset(self) -> tuple[int, str | None, dict[str, Any], bool]:
         def job(conn: Any) -> tuple[int, str | None, dict[str, Any], bool]:
@@ -91,6 +94,10 @@ class TranscriptTailer:
 
     def poll(self) -> int:
         """Ingest any new complete lines. Returns the number of records ingested."""
+        with self._poll_lock:
+            return self._poll()
+
+    def _poll(self) -> int:
         if self.cwd_hint is not None and not self._in_scope(self.cwd_hint):
             self.excluded = True
             return 0

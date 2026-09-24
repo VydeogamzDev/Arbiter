@@ -139,3 +139,25 @@ def test_repeatable_hook_events_dedupe_only_within_window(ing, home):
     assert ing.ingest_hook("claude_code", dict(p), surface="http").status == "redelivered"
     _t.sleep(2.1)
     assert ing.ingest_hook("claude_code", dict(p), surface="http").status == "stored"
+
+
+def test_concurrent_polls_of_one_transcript_keep_a_consistent_offset(ing, tmp_path):
+    """The watcher loop and `watch_poll` can poll one tailer at once; the offset must not overshoot EOF
+    (an overshoot looks like truncation and re-reads the whole file)."""
+    import json as _json
+    import threading
+
+    from arbiter_agent.clients.watchers.transcript_tail import TranscriptTailer
+
+    f = tmp_path / "t.jsonl"
+    f.write_text("".join(_json.dumps({"id": f"r{i}", "session_id": "s", "type": "note"}) + "\n" for i in range(300)))
+    for _ in range(5):
+        t = TranscriptTailer(client="fake", path=f, parser="fake_v1", ingestor=ing, writer=ing.writer)
+        t.offset, t.identity = 0, None
+        threads = [threading.Thread(target=t.poll) for _ in range(4)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        assert t.offset == f.stat().st_size
+        assert t.poll() == 0

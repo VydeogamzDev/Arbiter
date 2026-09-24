@@ -80,3 +80,17 @@ def pytest_runtest_logreport(report):  # type: ignore[no-untyped-def]
     msg = crash.message if crash is not None else str(report.longrepr).strip().splitlines()[-1:]
     msg = str(msg).replace("%", "%25").replace("\r", "").replace("\n", "%0A")[:900]
     print(f"\n::error file={path},line={(line or 0) + 1}::{report.nodeid} [{sys.platform}]: {msg}", flush=True)
+
+
+def pytest_terminal_summary(terminalreporter):  # type: ignore[no-untyped-def]
+    """On GitHub Actions, report the slowest tests as a notice annotation (readable without log access)."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    totals: dict[str, float] = {}
+    for reports in terminalreporter.stats.values():
+        for r in reports:
+            if hasattr(r, "duration") and hasattr(r, "nodeid"):
+                totals[r.nodeid] = totals.get(r.nodeid, 0.0) + float(r.duration)
+    slow = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:10]
+    msg = "; ".join(f"{node} {secs:.1f}s" for node, secs in slow).replace("%", "%25")
+    print(f"\n::notice title=slowest tests [{sys.platform}]::{msg}", flush=True)
