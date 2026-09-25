@@ -2968,8 +2968,10 @@ context:
   native_compaction_enabled: false
 
 gateway:
-  enabled: false                # enabled per client only after benchmark vs native deferral
+  enabled: auto                 # auto: per client, only where the benchmark shows a material gain (M10.3),
+                                # or when the client has adopted servers; on | off force it
   enabled_min_catalog_size: 20
+  semantic_search: auto         # add tier-0 encoder picks to lexical tool search when an ONNX encoder is configured
   stable_schema_surface: true
   normal_surface_miss_recovery: true
   authorization_bridge_required: true
@@ -2987,6 +2989,10 @@ retrieval:
   refresh_budget_s: 3.0         # per-query incremental refresh budget; unindexed changes are left out, never stale
   include_generated: false      # vendored/generated trees, lockfiles, minified bundles
   embeddings: "off"             # optional vector channel (M6.5); only "off" ships
+  auto_context: false           # M10.4: inject likely files when a prompt starts a new task (bounded); opt-in,
+                                # like ui.inject_status: it adds tokens to prompts and client formats vary
+  auto_context_max_tokens: 150
+  auto_context_deadline_ms: 250 # skipped entirely if the index can't answer in time
 
 review:
   security_floor: high

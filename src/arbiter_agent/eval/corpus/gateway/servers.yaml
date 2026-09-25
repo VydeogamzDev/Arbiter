@@ -1,0 +1,1111 @@
+# Reference MCP servers for the gateway benchmark (M10.3): realistic tool sets with MCP
+# annotations, modeled on common public servers. Not adopted anywhere; used only to measure.
+version: 1
+servers:
+  github:
+  - name: search_repositories
+    description: Search GitHub repositories by keyword, language or topic. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search text. Supports the service's search qualifiers and boolean operators.
+        page:
+          type: integer
+          description: Page number of results to return, starting at 1.
+      required:
+      - query
+    annotations:
+      readOnlyHint: true
+  - name: get_repository
+    description: 'Get metadata for a repository: description, default branch, stars, license. Returns a structured result;
+      errors include a message and the offending field.'
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: list_issues
+    description: List issues in a repository, filtered by state, labels or assignee. Returns a structured result; errors include
+      a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        state:
+          type: string
+          enum:
+          - open
+          - closed
+          - all
+          description: Filter by state. Omit to use the service default.
+        labels:
+          type: array
+          items:
+            type: string
+          description: Label names to filter by or apply; all given labels must match.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: get_issue
+    description: Get one issue with its body and comments. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        issue_number:
+          type: integer
+          description: The number that identifies the issue or pull request in this repository.
+      required:
+      - owner
+      - repo
+      - issue_number
+    annotations:
+      readOnlyHint: true
+  - name: create_issue
+    description: Open a new issue in a repository. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        title:
+          type: string
+          description: A short, descriptive title.
+        body:
+          type: string
+          description: Markdown body text. Supports mentions, task lists and code blocks.
+        labels:
+          type: array
+          items:
+            type: string
+          description: Label names to filter by or apply; all given labels must match.
+      required:
+      - owner
+      - repo
+      - title
+    annotations:
+      readOnlyHint: false
+  - name: update_issue
+    description: Edit an issue's title, body, state, labels or assignees. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        issue_number:
+          type: integer
+          description: The number that identifies the issue or pull request in this repository.
+        state:
+          type: string
+          description: Filter by state. Omit to use the service default.
+        title:
+          type: string
+          description: A short, descriptive title.
+      required:
+      - owner
+      - repo
+      - issue_number
+    annotations:
+      readOnlyHint: false
+  - name: add_issue_comment
+    description: Add a comment to an issue or pull request. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        issue_number:
+          type: integer
+          description: The number that identifies the issue or pull request in this repository.
+        body:
+          type: string
+          description: Markdown body text. Supports mentions, task lists and code blocks.
+      required:
+      - owner
+      - repo
+      - issue_number
+      - body
+    annotations:
+      readOnlyHint: false
+  - name: list_pull_requests
+    description: List pull requests in a repository. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        state:
+          type: string
+          description: Filter by state. Omit to use the service default.
+        base:
+          type: string
+          description: The base to use for this operation.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: get_pull_request
+    description: Get a pull request with its description, status and mergeability. Returns a structured result; errors include
+      a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        pull_number:
+          type: integer
+          description: The number that identifies the pull request in this repository.
+      required:
+      - owner
+      - repo
+      - pull_number
+    annotations:
+      readOnlyHint: true
+  - name: get_pull_request_diff
+    description: Get the unified diff of a pull request. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        pull_number:
+          type: integer
+          description: The number that identifies the pull request in this repository.
+      required:
+      - owner
+      - repo
+      - pull_number
+    annotations:
+      readOnlyHint: true
+  - name: get_pull_request_reviews
+    description: List reviews and review comments on a pull request. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        pull_number:
+          type: integer
+          description: The number that identifies the pull request in this repository.
+      required:
+      - owner
+      - repo
+      - pull_number
+    annotations:
+      readOnlyHint: true
+  - name: create_pull_request
+    description: Open a pull request from a head branch into a base branch. Returns a structured result; errors include a
+      message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        title:
+          type: string
+          description: A short, descriptive title.
+        head:
+          type: string
+          description: The head to use for this operation.
+        base:
+          type: string
+          description: The base to use for this operation.
+        body:
+          type: string
+          description: Markdown body text. Supports mentions, task lists and code blocks.
+      required:
+      - owner
+      - repo
+      - title
+      - head
+      - base
+    annotations:
+      readOnlyHint: false
+  - name: merge_pull_request
+    description: Merge a pull request (merge, squash or rebase). Returns a structured result; errors include a message and
+      the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        pull_number:
+          type: integer
+          description: The number that identifies the pull request in this repository.
+        merge_method:
+          type: string
+          enum:
+          - merge
+          - squash
+          - rebase
+          description: The merge method to use for this operation.
+      required:
+      - owner
+      - repo
+      - pull_number
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+  - name: create_pull_request_review
+    description: 'Submit a review on a pull request: approve, request changes or comment. Returns a structured result; errors
+      include a message and the offending field.'
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        pull_number:
+          type: integer
+          description: The number that identifies the pull request in this repository.
+        event:
+          type: string
+          description: The event to use for this operation.
+        body:
+          type: string
+          description: Markdown body text. Supports mentions, task lists and code blocks.
+      required:
+      - owner
+      - repo
+      - pull_number
+      - event
+    annotations:
+      readOnlyHint: false
+  - name: list_commits
+    description: List commits on a branch, optionally for one path. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        sha:
+          type: string
+          description: The sha to use for this operation.
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: get_commit
+    description: Get one commit with its changed files. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        sha:
+          type: string
+          description: The sha to use for this operation.
+      required:
+      - owner
+      - repo
+      - sha
+    annotations:
+      readOnlyHint: true
+  - name: list_branches
+    description: List branches in a repository. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: create_branch
+    description: Create a branch from another branch or commit. Returns a structured result; errors include a message and
+      the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        branch:
+          type: string
+          description: The branch to use for this operation.
+        from_branch:
+          type: string
+          description: The from branch to use for this operation.
+      required:
+      - owner
+      - repo
+      - branch
+    annotations:
+      readOnlyHint: false
+  - name: get_file_contents
+    description: Read a file or list a directory in a repository at a ref. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        ref:
+          type: string
+          description: The ref to use for this operation.
+      required:
+      - owner
+      - repo
+      - path
+    annotations:
+      readOnlyHint: true
+  - name: create_or_update_file
+    description: Create or update one file in a repository with a commit. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        content:
+          type: string
+          description: The full new content to write, as UTF-8 text.
+        message:
+          type: string
+          description: The message to use for this operation.
+        branch:
+          type: string
+          description: The branch to use for this operation.
+      required:
+      - owner
+      - repo
+      - path
+      - content
+      - message
+    annotations:
+      readOnlyHint: false
+  - name: delete_file
+    description: Delete a file from a repository with a commit. Returns a structured result; errors include a message and
+      the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        message:
+          type: string
+          description: The message to use for this operation.
+      required:
+      - owner
+      - repo
+      - path
+      - message
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+  - name: search_code
+    description: Search code across GitHub repositories. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search text. Supports the service's search qualifiers and boolean operators.
+      required:
+      - query
+    annotations:
+      readOnlyHint: true
+  - name: list_workflow_runs
+    description: List GitHub Actions workflow runs and their status. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        workflow_id:
+          type: string
+          description: The workflow id to use for this operation.
+        branch:
+          type: string
+          description: The branch to use for this operation.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  - name: get_workflow_run_logs
+    description: Download the logs of a workflow run. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        run_id:
+          type: integer
+          description: The run id to use for this operation.
+      required:
+      - owner
+      - repo
+      - run_id
+    annotations:
+      readOnlyHint: true
+  - name: rerun_workflow
+    description: Re-run a failed GitHub Actions workflow run. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+        run_id:
+          type: integer
+          description: The run id to use for this operation.
+      required:
+      - owner
+      - repo
+      - run_id
+    annotations:
+      readOnlyHint: false
+  - name: list_releases
+    description: List releases and their tags. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        owner:
+          type: string
+          description: 'Repository owner: the user or organization name, for example ''octocat''.'
+        repo:
+          type: string
+          description: Repository name without the owner, for example 'hello-world'.
+      required:
+      - owner
+      - repo
+    annotations:
+      readOnlyHint: true
+  filesystem:
+  - name: read_file
+    description: Read the complete contents of a file. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - path
+    annotations:
+      readOnlyHint: true
+  - name: read_multiple_files
+    description: Read several files at once. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        paths:
+          type: array
+          items:
+            type: string
+          description: Paths of the files to read, relative to the root the server exposes.
+      required:
+      - paths
+    annotations:
+      readOnlyHint: true
+  - name: write_file
+    description: Create or overwrite a file with new content. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        content:
+          type: string
+          description: The full new content to write, as UTF-8 text.
+      required:
+      - path
+      - content
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+  - name: edit_file
+    description: Make line-based edits to a text file and return a diff. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        edits:
+          type: array
+          items:
+            type: object
+          description: The edits to use for this operation.
+      required:
+      - path
+      - edits
+    annotations:
+      readOnlyHint: false
+  - name: create_directory
+    description: Create a directory, including parents. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - path
+    annotations:
+      readOnlyHint: false
+  - name: list_directory
+    description: List files and folders in a directory. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - path
+    annotations:
+      readOnlyHint: true
+  - name: directory_tree
+    description: Recursive tree of a directory as JSON. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - path
+    annotations:
+      readOnlyHint: true
+  - name: move_file
+    description: Move or rename a file or directory. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        source:
+          type: string
+          description: The source to use for this operation.
+        destination:
+          type: string
+          description: The destination to use for this operation.
+      required:
+      - source
+      - destination
+    annotations:
+      readOnlyHint: false
+  - name: search_files
+    description: Find files whose names match a pattern under a directory. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+        pattern:
+          type: string
+          description: The pattern to use for this operation.
+      required:
+      - path
+      - pattern
+    annotations:
+      readOnlyHint: true
+  - name: get_file_info
+    description: Size, timestamps and permissions of a file. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path to the file or directory, relative to the root the server exposes.
+      required:
+      - path
+    annotations:
+      readOnlyHint: true
+  - name: list_allowed_directories
+    description: The directories this server may access. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties: {}
+      required: []
+    annotations:
+      readOnlyHint: true
+  postgres:
+  - name: query
+    description: Run a read-only SQL query and return rows. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        sql:
+          type: string
+          description: The SQL statement to run. Use bound values rather than string concatenation.
+      required:
+      - sql
+    annotations:
+      readOnlyHint: true
+  - name: list_tables
+    description: List tables in the database schema. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        schema:
+          type: string
+          description: The schema to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: describe_table
+    description: Columns, types and indexes of a table. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        table:
+          type: string
+          description: The table to use for this operation.
+      required:
+      - table
+    annotations:
+      readOnlyHint: true
+  - name: execute
+    description: Execute a SQL statement that modifies data or schema. Returns a structured result; errors include a message
+      and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        sql:
+          type: string
+          description: The SQL statement to run. Use bound values rather than string concatenation.
+      required:
+      - sql
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+  - name: explain_query
+    description: Show the query plan for a SQL query. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        sql:
+          type: string
+          description: The SQL statement to run. Use bound values rather than string concatenation.
+      required:
+      - sql
+    annotations:
+      readOnlyHint: true
+  - name: list_slow_queries
+    description: Recent slow queries from pg_stat_statements. Returns a structured result; errors include a message and the
+      offending field.
+    inputSchema:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: The limit to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  browser:
+  - name: navigate
+    description: Open a URL in the browser. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Absolute URL including the scheme, for example https://example.com/login.
+      required:
+      - url
+    annotations:
+      readOnlyHint: false
+  - name: screenshot
+    description: Take a screenshot of the current page. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        full_page:
+          type: boolean
+          description: The full page to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: click
+    description: Click an element on the page. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        selector:
+          type: string
+          description: CSS selector or accessible name that uniquely identifies the element.
+      required:
+      - selector
+    annotations:
+      readOnlyHint: false
+  - name: fill
+    description: Type text into an input field. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        selector:
+          type: string
+          description: CSS selector or accessible name that uniquely identifies the element.
+        value:
+          type: string
+          description: The value to use for this operation.
+      required:
+      - selector
+      - value
+    annotations:
+      readOnlyHint: false
+  - name: select_option
+    description: Choose an option in a select element. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        selector:
+          type: string
+          description: CSS selector or accessible name that uniquely identifies the element.
+        value:
+          type: string
+          description: The value to use for this operation.
+      required:
+      - selector
+      - value
+    annotations:
+      readOnlyHint: false
+  - name: get_page_text
+    description: Extract the visible text of the page. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties: {}
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: evaluate_javascript
+    description: Run JavaScript in the page and return the result. Returns a structured result; errors include a message and
+      the offending field.
+    inputSchema:
+      type: object
+      properties:
+        script:
+          type: string
+          description: The script to use for this operation.
+      required:
+      - script
+    annotations:
+      readOnlyHint: false
+  - name: get_console_logs
+    description: Read the browser console log. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties: {}
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: list_network_requests
+    description: List network requests made by the page. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        filter:
+          type: string
+          description: The filter to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: go_back
+    description: Navigate back in history. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties: {}
+      required: []
+    annotations:
+      readOnlyHint: false
+  - name: wait_for
+    description: Wait for a selector or text to appear. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        selector:
+          type: string
+          description: CSS selector or accessible name that uniquely identifies the element.
+        timeout_ms:
+          type: integer
+          description: The timeout ms to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: close_tab
+    description: Close the current tab. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties: {}
+      required: []
+    annotations:
+      readOnlyHint: false
+  slack:
+  - name: list_channels
+    description: List public channels in the workspace. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: The limit to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: post_message
+    description: Post a message to a channel. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        channel_id:
+          type: string
+          description: The channel ID (not the display name), for example C01234567.
+        text:
+          type: string
+          description: Message text. Supports the workspace's markdown dialect.
+      required:
+      - channel_id
+      - text
+    annotations:
+      readOnlyHint: false
+  - name: reply_to_thread
+    description: Reply in a message thread. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        channel_id:
+          type: string
+          description: The channel ID (not the display name), for example C01234567.
+        thread_ts:
+          type: string
+          description: The thread ts to use for this operation.
+        text:
+          type: string
+          description: Message text. Supports the workspace's markdown dialect.
+      required:
+      - channel_id
+      - thread_ts
+      - text
+    annotations:
+      readOnlyHint: false
+  - name: add_reaction
+    description: Add an emoji reaction to a message. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        channel_id:
+          type: string
+          description: The channel ID (not the display name), for example C01234567.
+        timestamp:
+          type: string
+          description: The timestamp to use for this operation.
+        reaction:
+          type: string
+          description: The reaction to use for this operation.
+      required:
+      - channel_id
+      - timestamp
+      - reaction
+    annotations:
+      readOnlyHint: false
+  - name: get_channel_history
+    description: Recent messages in a channel. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        channel_id:
+          type: string
+          description: The channel ID (not the display name), for example C01234567.
+        limit:
+          type: integer
+          description: The limit to use for this operation.
+      required:
+      - channel_id
+    annotations:
+      readOnlyHint: true
+  - name: get_thread_replies
+    description: All replies in a thread. Returns a structured result; errors include a message and the offending field.
+    inputSchema:
+      type: object
+      properties:
+        channel_id:
+          type: string
+          description: The channel ID (not the display name), for example C01234567.
+        thread_ts:
+          type: string
+          description: The thread ts to use for this operation.
+      required:
+      - channel_id
+      - thread_ts
+    annotations:
+      readOnlyHint: true
+  - name: get_users
+    description: List workspace users with basic profiles. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: The limit to use for this operation.
+      required: []
+    annotations:
+      readOnlyHint: true
+  - name: search_messages
+    description: Search messages across channels. Returns a structured result; errors include a message and the offending
+      field.
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search text. Supports the service's search qualifiers and boolean operators.
+      required:
+      - query
+    annotations:
+      readOnlyHint: true

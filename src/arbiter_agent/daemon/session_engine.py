@@ -107,6 +107,8 @@ class SessionEngine:
         self.misses = MissDetector()        # retrieval misses (M9.2), fed by edits and retrievals
         # root -> (files, reverse import graph) from the repository index (set by the daemon; M9.3)
         self.graph_provider: Callable[[str], tuple[list[str], dict[str, set[str]]]] | None = None
+        # (cwd, context dict, refresh budget s) -> retrieval.context result (set by the daemon; M10.4)
+        self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -829,24 +831,79 @@ class SessionEngine:
             pass
 
     def on_prompt_hook(self, sid: str, event_name: str, deadline: Deadline) -> dict[str, Any]:
-        """Optional status injection (``ui.inject_status``; default off)."""
-        if not self.config.get("ui.inject_status", False) or not self.enabled("status_injection"):
-            return {}
-        if not self.shedder.allow("foreground"):
+        """Optional status injection (``ui.inject_status``; default off) and bounded auto-context
+        (``retrieval.auto_context``, M10.4) for prompts that start a new task."""
+        want_status = bool(self.config.get("ui.inject_status", False)) and self.enabled("status_injection")
+        want_context = bool(self.config.get("retrieval.auto_context", False)) and self.enabled("retrieval_reranker") \
+            and self.context_provider is not None and event_name == "UserPromptSubmit"
+        if not (want_status or want_context) or not self.shedder.allow("foreground"):
             return {}
         self.catch_up(deadline.sub(0.5))
+        parts: list[str] = []
+        if want_context:
+            ctx_text = self._auto_context(sid, deadline)
+            if ctx_text:
+                parts.append(ctx_text)
+        if want_status:
+            try:
+                state = self.session_status(sid, light=True)
+            except KeyError:
+                state = None
+            if state is not None:
+                text, h = ui_status.injection(state, last_hash=state.get("last_injected_hash"),
+                                              max_tokens=int(self.config.get("hooks.max_injected_tokens", 300)),
+                                              only_on_change=bool(self.config.get("hooks.inject_only_on_change",
+                                                                                  True)))
+                if text is not None:
+                    parts.append(text)
+                    self.writer.run(lambda c: c.execute(
+                        "UPDATE session_state SET last_injected_hash = ? WHERE session_id = ?", (h, sid)), timeout=2)
+        return ui_status.hook_context(event_name, "\n".join(parts)) if parts else {}
+
+    def _auto_context(self, sid: str, deadline: Deadline) -> str | None:
+        """M10.4 bounded retrieval automation. Only when the latest prompt started a new task; only
+        within ``retrieval.auto_context_deadline_ms`` (skipped, never waited for); only confident
+        suggestions (pinned files, or a narrow ranking); capped at ``auto_context_max_tokens``."""
+        import concurrent.futures as cf
+
+        rc = self._read()
         try:
-            state = self.session_status(sid, light=True)
-        except KeyError:
-            return {}
-        text, h = ui_status.injection(state, last_hash=state.get("last_injected_hash"),
-                                      max_tokens=int(self.config.get("hooks.max_injected_tokens", 300)),
-                                      only_on_change=bool(self.config.get("hooks.inject_only_on_change", True)))
-        if text is None:
-            return {}
-        self.writer.run(lambda c: c.execute("UPDATE session_state SET last_injected_hash = ? WHERE session_id = ?",
-                                            (h, sid)), timeout=2)
-        return ui_status.hook_context(event_name, text)
+            st = self._state(rc, sid, create=False)
+            last = intent_log.load_intents(rc, sid, int(st["intent_count"])) if st else []
+        finally:
+            rc.close()
+        if not st or not last or int(st["epoch_start_ordinal"] or 0) != int(st["intent_count"]):
+            return None                                    # not a new task
+        cwd = self.session_cwd(sid)
+        if not cwd or self.context_provider is None:
+            return None
+        budget = min(float(self.config.get("retrieval.auto_context_deadline_ms", 250)) / 1000.0,
+                     max(0.0, deadline.remaining() - 0.1))
+        if budget <= 0.02:
+            return None
+        provider = self.context_provider
+        query = last[-1].text[:2000]
+        ex = cf.ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(provider, cwd, {"query": query, "misses": len(self.misses.recent(sid))}, budget * 0.6)
+        try:
+            res = fut.result(timeout=budget)
+        except Exception:
+            self.stats["auto_context_skipped"] = self.stats.get("auto_context_skipped", 0) + 1
+            return None
+        finally:
+            ex.shutdown(wait=False)
+        pins = [p["path"] for p in res.get("pins", [])]
+        ranked = [r["path"] for r in res.get("ranked", [])]
+        if not pins and int(res.get("k") or 99) > 6:
+            return None                                    # no clear winner: say nothing
+        picks = list(dict.fromkeys(pins + ranked[:3]))[:6]
+        if not picks:
+            return None
+        self.misses.surfaced(sid, picks, query)
+        text = "[Arbiter] Files likely relevant to this task (suggestion): " + ", ".join(picks)
+        cap = int(self.config.get("retrieval.auto_context_max_tokens", 150)) * 4
+        self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
+        return text[:cap]
 
     # ------------------------------------------------------------------ tool API (MCP + CLI)
     def resolve_session(self, params: dict[str, Any]) -> str | None:

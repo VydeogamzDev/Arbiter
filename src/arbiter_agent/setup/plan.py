@@ -154,6 +154,12 @@ def _validate(change: FileChange, data: bytes) -> None:
         cm._parse_toml(data.decode("utf-8"), change.path)
     elif change.kind in mcp_entry.ENTRY_FORMATS:
         mcp_entry.validate(change.kind, data, change.path)
+    elif change.kind == "gateway_adopt":
+        fmt = str(change.detail.get("format"))
+        if fmt == "toml_table":
+            cm._parse_toml(data.decode("utf-8"), change.path)
+        else:
+            mcp_entry.validate(fmt, data, change.path)
     elif change.kind == "gemini_hook_groups":
         from arbiter_agent.clients import text_config
 

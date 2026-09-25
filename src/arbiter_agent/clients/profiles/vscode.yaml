@@ -27,4 +27,5 @@ completion_claim:
   finish_tool: arbiter_finish_check
 effort_control: advisory
 native_tool_deferral: false    # groups tools past a threshold ("virtual tools"); schemas are not deferred
+elicitation: true              # supports MCP elicitation (approval prompts from servers)
 mcp_client_names: ["visual studio code*", "vscode*"]

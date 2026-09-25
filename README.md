@@ -49,6 +49,7 @@ arbiter doctor                     # shows what's verified for each client
 | `arbiter context "task"` | which files to read for a task: files the error points at, files you named or changed, then the most relevant files, with reasons |
 | `arbiter advice [--history]` | advisory read of the session: suggested reasoning effort and why, whether to broaden retrieval or replan, and the risk level of the current diff with a suggested test order. `--history` lists every recorded recommendation (the audit trail) |
 | `arbiter eval --advisory` | run the diff-risk and retrieval gates |
+| `arbiter gateway servers --client X` / `adopt X` / `release X` / `bench` | tool gateway: move an existing MCP server behind Arbiter's three-tool gateway (with a diff and backup; read-only tools run, tools that change things ask you on every call, and servers whose approvals can't be mirrored stay direct), put it back, or measure per client whether the gateway saves enough to turn on |
 | `arbiter semif status` / `enable` / `bench [--heldout]` / `export-onnx` | optional semantic sensor: plans a model tier for your GPU (writes config only with `--yes`, never downloads by itself), benchmarks it against the rules, and exports the tier 0 encoder to a small ONNX model (about 1 GB of RAM, CPU-friendly). It only logs judgments beside the rules and never changes a decision |
 
 Agents get these MCP tools:
@@ -98,5 +99,6 @@ ARBITER_REAL_CLAUDE=1 uv run pytest tests/test_real_claude_memory.py -s   # opt-
 | Semantic sensor: backends, budgeting, validation, mirroring, shadow harness, benchmark | `semif/` |
 | Policy core: fail modes, breaker board, cascade, priority and authority, budgets, shedding; controls | `policy/`, `ui/overrides.py` |
 | Advisory: reasoning scheduler (model x effort), diff risk and review scheduling, Host Advisory API v0 | `reasoning/`, `review/`, `host/` |
+| Tool gateway: catalog, search (lexical + tier-0 encoder), schema validation, approval mirroring, adoption, benchmark | `gateway/` |
 | Privacy: redaction at ingest, project scope and `.arbiterignore`, retention and storage cap | `privacy/` |
 | Eval harness, corpus and §20.17 gates | `eval/` |

@@ -142,6 +142,8 @@ class Daemon:
                                               redaction_enabled=self.flags.enabled("redaction"))
             self.engine.cwd_listeners.append(lambda sid, cwd: self.retrieval.warm(cwd) if self.retrieval else None)
             self.engine.graph_provider = self._graph_for
+            retrieval = self.retrieval
+            self.engine.context_provider = lambda cwd, ctx, budget: retrieval.context(cwd, ctx, budget)
         if self.flags.enabled("host_api") and self.config.get("hosts.enabled", True):
             from arbiter_agent.host.api import HostAPI
 

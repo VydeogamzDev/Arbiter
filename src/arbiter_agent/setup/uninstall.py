@@ -24,6 +24,10 @@ def _semantic_remove(rec: InstallRecord, current: bytes) -> bytes:
     path = Path(rec.path)
     if rec.kind == "toml_block":
         return cm.toml_remove_block(current, path)
+    if rec.kind == "gateway_adopt":          # put the adopted server's original entry back
+        from arbiter_agent.gateway.adopt import restore_entry
+
+        return restore_entry(current, path, dict(rec.detail))
     if rec.kind == "json_named_entry" and "container_path" not in rec.detail:   # Claude Code (M2 records)
         return cm.json_transform(current, path, cm.remove_named_entry(
             str(rec.detail.get("container", "mcpServers")), str(rec.detail.get("name", "arbiter")),
@@ -107,4 +111,10 @@ def uninstall(paths: ArbiterPaths, clients: list[str] | None = None) -> list[str
                 rec.removed_at = time.time()
         out.append(result)
     manifest.save()
+    from arbiter_agent.gateway.registry import Registry
+
+    reg = Registry.load(paths)
+    if reg.items:
+        reg.items = [a for a in reg.items if clients and a.client not in clients]
+        reg.save()
     return out

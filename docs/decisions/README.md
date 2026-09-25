@@ -59,6 +59,7 @@ What this makes easier, harder, or rules out.
 | [0026](0026-sensor-backends-model-tiers-and-fine-tuning.md) | Semantic sensor: pluggable backends, GLiNER2.5-Decide encoder tier 0, decoder tiers by VRAM (JevK5 / K2 Horizon 7B), fine-tuned adapters | Accepted (plan) |
 | [0027](0027-m5-client-profiles.md) | M5 client coverage: ten new profiles, JSONC/YAML minimal-edit writers, hook dialects (Cursor, VS Code, Gemini) | Accepted |
 | [0028](0028-m6-repository-indexes.md) | M6 repository indexes: content-addressed analysis, per-worktree views, refresh-before-query, access policy | Accepted |
+| [0033](0033-m10-tool-gateway.md) | M10 tool gateway: approval-preserving proxying of adopted servers, exact launch specs, benchmark-gated per client, hybrid (lexical + tier-0 encoder) tool search | Accepted |
 | [0032](0032-m9-advisory-modules.md) | M9 advisory modules: diff risk (shadow), context retrieval, model x effort scheduler, Host Advisory API v0 (shadow), audit trail, held-out evaluation discipline | Accepted |
 | [0031](0031-tier0-runtimes-and-heldout-corpus.md) | Tier 0 runtimes (ONNX w8e4 default, Core ML on macOS), one-pass mirroring, frozen held-out sensor corpus and the routing it suggests | Accepted |
 | [0030](0030-m8-policy-core-and-breakers.md) | M8 policy core: breaker board with recovery windows and latched incidents, fail modes as data, cascade, conflict priority, authority-checked controls, fault injection | Accepted |

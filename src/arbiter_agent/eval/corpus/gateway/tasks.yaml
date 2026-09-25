@@ -1,0 +1,83 @@
+# Gateway benchmark tasks: what the agent needs to do -> the tool that does it.
+version: 1
+tasks:
+- task: find the open bugs labeled regression in acme/web
+  gold: github.list_issues
+- task: open an issue about the flaky login test
+  gold: github.create_issue
+- task: comment on PR 42 that the fix looks good
+  gold: github.add_issue_comment
+- task: show me the diff of pull request 17
+  gold: github.get_pull_request_diff
+- task: approve pull request 17
+  gold: github.create_pull_request_review
+- task: merge the release PR with squash
+  gold: github.merge_pull_request
+- task: why did the CI run fail, get the workflow logs
+  gold: github.get_workflow_run_logs
+- task: re-run the failed workflow
+  gold: github.rerun_workflow
+- task: list recent commits touching src/parser.py
+  gold: github.list_commits
+- task: create a feature branch from main
+  gold: github.create_branch
+- task: read README.md from the repo on the main branch
+  gold: github.get_file_contents
+- task: what releases exist for this repo
+  gold: github.list_releases
+- task: search GitHub code for uses of parse_header
+  gold: github.search_code
+- task: open a pull request from my branch
+  gold: github.create_pull_request
+- task: read the local config file settings.toml
+  gold: filesystem.read_file
+- task: write the new config to disk
+  gold: filesystem.write_file
+- task: list what's in the reports folder
+  gold: filesystem.list_directory
+- task: find all files named *.log under /var/app
+  gold: filesystem.search_files
+- task: rename draft.md to final.md
+  gold: filesystem.move_file
+- task: make a directory for the exports
+  gold: filesystem.create_directory
+- task: apply a small edit to utils.py
+  gold: filesystem.edit_file
+- task: how big is the database dump file
+  gold: filesystem.get_file_info
+- task: which tables are in the database
+  gold: postgres.list_tables
+- task: what columns does the orders table have
+  gold: postgres.describe_table
+- task: count rows in the users table with a SQL query
+  gold: postgres.query
+- task: delete old rows from the sessions table
+  gold: postgres.execute
+- task: why is this query slow, show the plan
+  gold: postgres.explain_query
+- task: open the staging site in the browser
+  gold: browser.navigate
+- task: take a screenshot of the page
+  gold: browser.screenshot
+- task: click the checkout button
+  gold: browser.click
+- task: type my email into the signup form
+  gold: browser.fill
+- task: what errors are in the browser console
+  gold: browser.get_console_logs
+- task: which API calls did the page make
+  gold: browser.list_network_requests
+- task: 'post the deploy summary to the #releases channel'
+  gold: slack.post_message
+- task: 'what did people say in #incidents today'
+  gold: slack.get_channel_history
+- task: search slack for messages about the outage
+  gold: slack.search_messages
+- task: reply in the thread that it's fixed
+  gold: slack.reply_to_thread
+- task: show my session's contracts and evidence
+  gold: arbiter.arbiter_contracts
+- task: which files should I read for this bug
+  gold: arbiter.arbiter_context
+- task: find where parse_header is defined in this repo
+  gold: arbiter.arbiter_symbol

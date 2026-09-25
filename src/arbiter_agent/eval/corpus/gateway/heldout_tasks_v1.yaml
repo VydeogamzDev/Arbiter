@@ -1,0 +1,24 @@
+# Held-out gateway search tasks, v1 (2026-09-25). FROZEN: never tune search against it.
+# Written after search was developed on tasks.yaml; phrasing deliberately differs.
+version: 1
+tasks:
+  - {task: "who reviewed pull request 88 and what did they ask for", gold: github.get_pull_request_reviews}
+  - {task: "close issue 12 as fixed", gold: github.update_issue}
+  - {task: "is the main build green right now", gold: github.list_workflow_runs}
+  - {task: "which branches exist in the web repo", gold: github.list_branches}
+  - {task: "what changed in commit abc123", gold: github.get_commit}
+  - {task: "remove the obsolete migration file from the repository", gold: github.delete_file}
+  - {task: "get repo info like the default branch and license", gold: github.get_repository}
+  - {task: "look at three config files together", gold: filesystem.read_multiple_files}
+  - {task: "show the whole project tree", gold: filesystem.directory_tree}
+  - {task: "what directories am I allowed to touch", gold: filesystem.list_allowed_directories}
+  - {task: "select the average order total from the orders table", gold: postgres.query}
+  - {task: "which queries are slowest lately", gold: postgres.list_slow_queries}
+  - {task: "add an index on users.email", gold: postgres.execute}
+  - {task: "pick 'Germany' in the country dropdown", gold: browser.select_option}
+  - {task: "read what the page says", gold: browser.get_page_text}
+  - {task: "run document.title in the page", gold: browser.evaluate_javascript}
+  - {task: "wait until the spinner disappears", gold: browser.wait_for}
+  - {task: "react with a thumbs up to that message", gold: slack.add_reaction}
+  - {task: "who is in the workspace", gold: slack.get_users}
+  - {task: "read the whole thread under the incident announcement", gold: slack.get_thread_replies}

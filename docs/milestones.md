@@ -12,7 +12,7 @@ Conventions:
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
        → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers ✅ → M9 advisory ✅ (diff-risk held-out gap)
-       → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
+       → M10 gateway ✅ → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
 ```
@@ -258,7 +258,7 @@ Stage 5 · Build steps 24–26
   - Closing this needs real, independently labeled diffs and a diff-risk sensor family (§13.2 semantic features). Diff risk stays shadow-only meanwhile.
 - **Scheduler and Host Advisory API v0** in shadow: never outside the allowed set, deadlines and errors abstain, outcomes confined per project.
 
-## M10 — Tool gateway + bounded retrieval automation
+## M10 — Tool gateway + bounded retrieval automation ✅ Done 2026-09-25
 Stage 6 · Build steps 27–28 · Tier T1
 
 - **M10.1** `gateway/catalog`, `search`, `describe`, `call`, `schema_validation`.
@@ -267,6 +267,13 @@ Stage 6 · Build steps 27–28 · Tier T1
 - **M10.4** Bounded retrieval reranking turned on.
 
 **Exit:** material benefit per §20.17 on the clients where it's enabled, 0 approval-granularity regressions, and no scope expansion.
+
+**Result** (decision [0033](decisions/0033-m10-tool-gateway.md); `tests/test_gateway.py`, `arbiter gateway bench`):
+- **Material benefit where enabled: met in the session model.** With hybrid search the gateway turns on for normal-schema clients at 47 and 73 reference tools (24% and 44% lower session cost), and for native-deferral clients only at 73 tools (13%). With lexical search alone, held-out recall is 0.85, so it stays off.
+  - These are modeled costs, not measured agent runs; measuring real Codex sessions with a large adopted catalog is the next step.
+- **Approval granularity: 0 regressions** (tests): read-only-only proxying without elicitation, per-call approval with exact arguments, no inheritance, sticky denials, adoption refused when approvals can't be mirrored.
+- **Scope: no expansion** (tests): exact launch spec (env, cwd); server-to-client requests refused; remote servers not adoptable yet.
+- **M10.4:** reranked context is live in the tools and host API; prompt auto-injection is implemented but opt-in (`retrieval.auto_context`).
 
 ## M11 — Hivemind host integration + model/effort bounded auto
 Stage 7 · Build steps 29–30 · Tier T4 (via orchestrator host; decision 0013)

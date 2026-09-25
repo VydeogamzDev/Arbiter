@@ -35,6 +35,9 @@ class Profile:
     completion_claim: dict[str, Any] = field(default_factory=dict)
     effort_control: str = "advisory"
     native_tool_deferral: bool = False
+    # The client answers MCP elicitation requests (needed to mirror per-tool approvals through the
+    # gateway, spec §10.7). Conservative: false unless known; the shim also checks capabilities at runtime.
+    elicitation: bool = False
     # MCP ``clientInfo.name`` values this client reports (lower-case, exact or ``prefix*``), so a
     # launched shim can be attributed to the right client (T1 evidence).
     mcp_client_names: tuple[str, ...] = ()
@@ -126,4 +129,5 @@ def parse_profile(data: dict[str, Any], source: str = "builtin") -> Profile:
         completion_claim=dict(data.get("completion_claim") or {}),
         effort_control=str(data.get("effort_control", "advisory")),
         native_tool_deferral=bool(data.get("native_tool_deferral", False)),
+        elicitation=bool(data.get("elicitation", False)),
         mcp_client_names=tuple(str(x).lower() for x in data.get("mcp_client_names") or []), source=source)

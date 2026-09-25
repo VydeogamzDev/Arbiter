@@ -59,7 +59,10 @@ def container_path(spec: dict[str, Any]) -> list[str]:
     return [str(x) for x in c] if isinstance(c, list) else [str(c)]
 
 
-def _json_upsert(path_keys: list[str], name: str, entry: Any) -> cm.JsonMutator:
+Owned = Any    # Callable[[Any], bool]: "may Arbiter replace or remove this existing entry?"
+
+
+def _json_upsert(path_keys: list[str], name: str, entry: Any, owned: Owned = is_ours) -> cm.JsonMutator:
     def mutate(d: dict[str, Any]) -> dict[str, Any]:
         box: Any = d
         for k in path_keys:
@@ -69,7 +72,7 @@ def _json_upsert(path_keys: list[str], name: str, entry: Any) -> cm.JsonMutator:
             if not isinstance(nxt, dict):
                 raise cm.ConfigConflict(f"'{k}' isn't an object")
             box = nxt
-        if name in box and not is_ours(box[name]):
+        if name in box and not owned(box[name]):
             raise cm.ConfigConflict(f"'{'.'.join(path_keys)}.{name}' exists and isn't managed by Arbiter")
         box[name] = entry
         return d
@@ -77,7 +80,7 @@ def _json_upsert(path_keys: list[str], name: str, entry: Any) -> cm.JsonMutator:
     return mutate
 
 
-def _json_remove(path_keys: list[str], name: str) -> cm.JsonMutator:
+def _json_remove(path_keys: list[str], name: str, owned: Owned = is_ours) -> cm.JsonMutator:
     def mutate(d: dict[str, Any]) -> dict[str, Any]:
         chain: list[tuple[dict[str, Any], str]] = []
         box: Any = d
@@ -86,7 +89,7 @@ def _json_remove(path_keys: list[str], name: str) -> cm.JsonMutator:
                 return d
             chain.append((box, k))
             box = box[k]
-        if name in box and is_ours(box[name]):
+        if name in box and owned(box[name]):
             del box[name]
             for parent, k in reversed(chain):   # prune containers left empty
                 if parent[k] == {}:
@@ -98,29 +101,41 @@ def _json_remove(path_keys: list[str], name: str) -> cm.JsonMutator:
     return mutate
 
 
-def upsert(fmt: str, original: bytes | None, path: Path, spec: dict[str, Any], entry: Any) -> bytes:
+def upsert(fmt: str, original: bytes | None, path: Path, spec: dict[str, Any], entry: Any,
+           owned: Owned = is_ours) -> bytes:
     keys, name = container_path(spec), str(spec.get("name", "arbiter"))
     if fmt == "json_named_entry":
-        return cm.json_transform(original, path, _json_upsert(keys, name, entry))
+        return cm.json_transform(original, path, _json_upsert(keys, name, entry, owned))
     if fmt == "jsonc_named_entry":
-        return tc.jsonc_upsert(original, path, keys, name, entry, is_ours)
+        return tc.jsonc_upsert(original, path, keys, name, entry, owned)
     if fmt == "yaml_named_entry":
         if len(keys) != 1:
             raise cm.ConfigConflict("YAML entries support a top-level container only")
-        return tc.yaml_upsert(original, path, keys[0], name, entry, is_ours)
+        return tc.yaml_upsert(original, path, keys[0], name, entry, owned)
     raise ValueError(f"unsupported entry format {fmt}")
 
 
-def remove(fmt: str, current: bytes, path: Path, detail: dict[str, Any]) -> bytes:
+def remove(fmt: str, current: bytes, path: Path, detail: dict[str, Any], owned: Owned = is_ours) -> bytes:
     keys = [str(x) for x in detail.get("container_path") or [detail.get("container", "mcpServers")]]
     name = str(detail.get("name", "arbiter"))
     if fmt == "json_named_entry":
-        return cm.json_transform(current, path, _json_remove(keys, name))
+        return cm.json_transform(current, path, _json_remove(keys, name, owned))
     if fmt == "jsonc_named_entry":
-        return tc.jsonc_remove(current, path, keys, name, is_ours)
+        return tc.jsonc_remove(current, path, keys, name, owned)
     if fmt == "yaml_named_entry":
-        return tc.yaml_remove(current, path, keys[0], name, is_ours)
+        return tc.yaml_remove(current, path, keys[0], name, owned)
     raise ValueError(f"unsupported entry format {fmt}")
+
+
+def entries(fmt: str, raw: bytes | None, path: Path, spec: dict[str, Any]) -> dict[str, Any]:
+    """All MCP server entries in the client's container (name -> entry)."""
+    if not raw:
+        return {}
+    data: Any = (cm.load_json(raw, path) if fmt == "json_named_entry" else tc.load_jsonc(raw, path)
+                 if fmt == "jsonc_named_entry" else tc._yaml_load(raw, path))
+    for k in container_path(spec):
+        data = data.get(k) if isinstance(data, dict) else None
+    return dict(data) if isinstance(data, dict) else {}
 
 
 def validate(fmt: str, data: bytes, path: Path) -> None:

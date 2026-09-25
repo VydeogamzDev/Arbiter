@@ -183,6 +183,12 @@ class MCPShim:
         self._write_lock = threading.Lock()
         self.client_name = ""
         self.last_session: str | None = None
+        self.client_caps: dict[str, Any] = {}
+        self._gateway: Any = None
+        self._gateway_active: bool | None = None
+        self._upstreams: dict[str, Any] = {}
+        self._pending: dict[str, Any] = {}           # our requests to the client (elicitation) -> Future
+        self._req_seq = 0
 
     # ---------------------------------------------------------------- wire
     def _send(self, obj: dict[str, Any]) -> None:
@@ -196,6 +202,95 @@ class MCPShim:
 
     def _error(self, mid: Any, code: int, message: str) -> None:
         self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}})
+
+    def request_client(self, method: str, params: dict[str, Any], timeout: float = 120.0) -> Any:
+        """Send a request to the client (e.g. ``elicitation/create``) and wait for its response."""
+        from concurrent.futures import Future
+
+        with self._write_lock:
+            self._req_seq += 1
+            rid = f"arbiter-{self._req_seq}"
+        fut: Future[Any] = Future()
+        self._pending[rid] = fut
+        self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        try:
+            return fut.result(timeout=timeout)
+        finally:
+            self._pending.pop(rid, None)
+
+    # ---------------------------------------------------------------- gateway (M10)
+    def _profile_id(self) -> str | None:
+        from arbiter_agent.daemon.clients_runtime import client_from_info
+
+        return client_from_info(self.client_name) if self.client_name else None
+
+    def gateway_active(self) -> bool:
+        """Gateway mode for this client: forced on/off by config, else on when the client has adopted
+        servers (their tools only exist behind the gateway) or the benchmark enabled it."""
+        if self._gateway_active is not None:
+            return self._gateway_active
+        active = False
+        try:
+            from arbiter_agent.config import load_config
+            from arbiter_agent.gateway.registry import Registry
+
+            mode = str(load_config(self.paths).get("gateway.enabled", "auto")).lower()
+            pid = self._profile_id()
+            if mode in ("on", "true"):
+                active = True
+            elif mode not in ("off", "false") and pid:
+                active = bool(Registry.load(self.paths).for_client(pid)) or self._policy_enabled(pid)
+        except Exception:
+            active = False
+        self._gateway_active = active
+        return active
+
+    def _policy_enabled(self, pid: str) -> bool:
+        import json as _json
+
+        try:
+            data = _json.loads((self.paths.state / "gateway_decisions.json").read_text(encoding="utf-8"))
+            return bool(data.get(pid, {}).get("enabled"))
+        except (OSError, ValueError):
+            return False
+
+    def gateway(self) -> Any:
+        if self._gateway is not None:
+            return self._gateway
+        from arbiter_agent.config import load_config
+        from arbiter_agent.gateway import semantic
+        from arbiter_agent.gateway.authorization_bridge import AuthorizationBridge
+        from arbiter_agent.gateway.call import Gateway
+        from arbiter_agent.gateway.catalog import Catalog, from_server, own_tools
+        from arbiter_agent.gateway.registry import Registry
+        from arbiter_agent.gateway.upstream import LaunchSpec, Upstream
+
+        catalog = Catalog(own_tools(TOOLS))
+        pid = self._profile_id()
+        for a in Registry.load(self.paths).for_client(pid) if pid else []:
+            try:
+                up = Upstream(a.server, LaunchSpec.from_entry(a.entry)).start()
+            except Exception as exc:
+                record_failopen(self.paths.logs, "gateway", f"{a.server}: {exc}"[:200])
+                continue
+            self._upstreams[a.server] = up
+            catalog.add(from_server(a.server, up.tools, a.confirmed_read_only))
+        elicitation = "elicitation" in self.client_caps
+        config = load_config(self.paths)
+        self._gateway = Gateway(catalog, AuthorizationBridge(elicitation), local_call=self.call_tool,
+                                upstream_call=lambda server, tool, args: self._upstreams[server].call(tool, args),
+                                elicit=(lambda params: self.request_client("elicitation/create", params))
+                                if elicitation else None)
+        self._gateway.ranker = semantic.ranker_from_config(config)
+        return self._gateway
+
+    def tools_for_client(self) -> list[dict[str, Any]]:
+        if not self.gateway_active():
+            return TOOLS
+        from arbiter_agent.gateway.call import GATEWAY_TOOLS
+        from arbiter_agent.gateway.catalog import CORE_TOOLS
+
+        return [t for t in TOOLS if t["name"] in CORE_TOOLS] + GATEWAY_TOOLS
 
     # ---------------------------------------------------------------- tools
     def _text(self, text: str, is_error: bool = False) -> dict[str, Any]:
@@ -236,6 +331,8 @@ class MCPShim:
                                                                     "paths": args.get("paths") or []}})
         if name == "arbiter_advice":
             return self._task_tool(name, args)
+        if name in ("tool_search", "tool_describe", "tool_call") and self.gateway_active():
+            return dict(self.gateway().handle(name, args))
         raise KeyError(name)
 
     def _binding(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -341,11 +438,20 @@ class MCPShim:
             trigger_launch(self.paths)  # warm the daemon early; never waits
             info = params.get("clientInfo") or {}
             self.client_name = str(info.get("name") or "")
+            self.client_caps = dict(params.get("capabilities") or {})
             threading.Thread(target=self._report_client, args=(info,), daemon=True).start()
         elif method == "ping":
             self._result(mid, {})
         elif method == "tools/list":
-            self._result(mid, {"tools": TOOLS})
+            self._result(mid, {"tools": self.tools_for_client()})
+        elif method is None and mid is not None and mid in self._pending:
+            fut = self._pending.get(mid)
+            if fut is not None and not fut.done():
+                fut.set_result(msg.get("result") if "result" in msg else {"action": "cancel"})
+        elif method == "tools/call" and params.get("name") == "tool_call":
+            # may wait on an elicitation answer from the client: run it off the read loop
+            threading.Thread(target=self._call_async, args=(mid, dict(params.get("arguments") or {})),
+                             daemon=True).start()
         elif method == "tools/call":
             name = params.get("name")
             args = params.get("arguments") or {}
@@ -361,6 +467,15 @@ class MCPShim:
         elif mid is not None and method is not None:
             self._error(mid, -32601, f"method not found: {method}")
         # notifications (no id) are ignored
+
+    def _call_async(self, mid: Any, args: dict[str, Any]) -> None:
+        try:
+            self._result(mid, self.call_tool("tool_call", args))
+        except KeyError:
+            self._error(mid, -32602, "unknown tool: tool_call")
+        except Exception as exc:
+            record_failopen(self.paths.logs, "mcp_shim", f"{type(exc).__name__}: {exc}")
+            self._result(mid, self._text(""))
 
     def serve(self, inp: Any = None) -> int:
         inp = inp or sys.stdin
@@ -381,6 +496,8 @@ class MCPShim:
                 self.handle(msg)
         if self._client:
             self._client.close()
+        for up in self._upstreams.values():
+            up.close()
         return 0
 
 

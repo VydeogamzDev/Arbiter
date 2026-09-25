@@ -340,6 +340,9 @@ def build_parser() -> argparse.ArgumentParser:
     from arbiter_agent.cli_tasks import add_parsers
 
     add_parsers(sub)
+    from arbiter_agent.gateway.cli import add_parser as add_gateway_parser
+
+    add_gateway_parser(sub)
     return p
 
 
