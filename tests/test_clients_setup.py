@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -306,3 +307,28 @@ def test_claude_plugin_package_is_consistent():
     for ev, groups in hooks.items():
         h = groups[0]["hooks"][0]
         assert h["type"] == "command" and h["args"] == ["hook", "claude_code", ev]   # exec form, no shell
+
+
+def test_setup_skips_appdata_configs_inside_packaged_app(home, clients_home, monkeypatch):
+    """Inside an MSIX-packaged app (e.g. the Claude desktop app) AppData writes are redirected into a
+    private copy the real client never reads: setup must refuse those files and say why."""
+    from arbiter_agent import appcontainer
+
+    monkeypatch.setenv("ARBITER_TEST_PACKAGED", "Claude_test")
+    monkeypatch.setattr(appcontainer, "_dir_redirected", lambda d, pkg: True)   # as a redirected AppData dir
+    monkeypatch.setenv("LOCALAPPDATA", str(clients_home.localappdata))
+    monkeypatch.setenv("APPDATA", str(clients_home.appdata))
+    Path(clients_home.appdata).mkdir(parents=True, exist_ok=True)
+    rc, out = setup(home, ["vscode", "claude_code"])
+    assert "runs inside the packaged app Claude_test" in out and rc == 3
+    import json as _json
+
+    claude = _json.loads((Path(os.environ["CLAUDE_CONFIG_DIR"]) / ".claude.json").read_text(encoding="utf-8"))
+    assert "arbiter" in claude["mcpServers"]                    # ~/.claude isn't virtualized: written
+
+
+def test_stable_port_avoids_ephemeral_ranges():
+    from arbiter_agent.daemon.server import STABLE_PORT_RANGE, free_stable_port
+
+    p1, p2 = free_stable_port("install-a"), free_stable_port("install-a")
+    assert STABLE_PORT_RANGE[0] <= p1 < STABLE_PORT_RANGE[1] and p1 == p2    # deterministic per install

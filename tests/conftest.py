@@ -26,6 +26,7 @@ def _isolate_real_homes(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(base / "codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(base / "claude"))
     monkeypatch.setenv("ARBITER_CLIENT_HOME", str(base))
+    monkeypatch.setenv("ARBITER_TEST_PACKAGED", "")   # tests never depend on the terminal being inside an MSIX app
     yield
     if (default_home / "data" / "state" / "ipc.token").exists():  # something autostarted a daemon here
         lifecycle.stop(get_paths(default_home), timeout=5)

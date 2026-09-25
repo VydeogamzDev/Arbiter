@@ -13,7 +13,6 @@ Codex ``trusted_hash``.
 from __future__ import annotations
 
 import json
-import socket
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -55,9 +54,9 @@ def stable_http_port(paths: ArbiterPaths) -> int:
         return int(f.read_text().strip())
     except (OSError, ValueError):
         pass
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        port = int(s.getsockname()[1])
+    from arbiter_agent.daemon.server import free_stable_port
+
+    port = free_stable_port(paths.instance_id)
     write_private(f, str(port).encode())
     return port
 
@@ -138,6 +137,15 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
                 continue
         changes += [c.prepare() for c in plan_for(p, env, command, port=port, hook_token=hook_token)]
 
+    from arbiter_agent import appcontainer
+
+    pkg = appcontainer.package_name()
+    if pkg:
+        for c in changes:
+            if c.error is None and appcontainer.virtualized(c.path):
+                c.error = (f"this terminal runs inside the packaged app {pkg}, so writes under AppData go to a "
+                           "private copy the client never reads; run `arbiter setup` from a regular terminal "
+                           "for this client")
     out.write("\nPlanned changes:\n")
     for c in changes:
         out.write(f"* {c.description}\n")

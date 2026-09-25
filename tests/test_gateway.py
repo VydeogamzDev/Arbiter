@@ -276,8 +276,11 @@ class _Pipe(io.StringIO):
                 self.cv.wait(left)
 
 
-def test_shim_gateway_mode_end_to_end(home):
+def test_shim_gateway_mode_end_to_end(home, monkeypatch):
+    from arbiter_agent.shims import mcp_server
     from arbiter_agent.shims.mcp_server import MCPShim
+
+    monkeypatch.setattr(mcp_server, "trigger_launch", lambda paths: None)   # don't leave a daemon behind
 
     reg = Registry(home.config / "gateway" / "adopted.json")
     up = Upstream("probe", LaunchSpec.from_entry(fake_entry())).start()

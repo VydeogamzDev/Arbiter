@@ -19,7 +19,9 @@ def _platform_roots() -> tuple[Path, Path, Path]:
     """Return (data_dir, log_dir, config_dir) for the current platform."""
     home = Path.home()
     if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local") / APP
+        # Not %LOCALAPPDATA%: packaged apps (MSIX, e.g. the Claude desktop app) redirect their
+        # processes' AppData writes into a private copy the daemon never sees (see appcontainer.py).
+        base = home / f".{APP}"
         return base / "data", base / "logs", base / "config"
     if sys.platform == "darwin":
         support = home / "Library" / "Application Support" / APP

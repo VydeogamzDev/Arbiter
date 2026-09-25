@@ -43,17 +43,47 @@ RETENTION_INTERVAL_S = 6 * 3600
 log = logging.getLogger("arbiter.daemon")
 
 
-def _pick_port(preferred: int | None) -> int:
-    if preferred:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", preferred))
-                return preferred
-            except OSError:
-                pass
+# Hook ports come from below the OS ephemeral ranges (Windows 49152+, Linux 32768+): a port the OS
+# hands out for outgoing connections can be taken at any moment, which would break every client
+# hook that points at it.
+STABLE_PORT_RANGE = (20000, 32000)
+
+
+def _can_bind(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def free_stable_port(seed: str, attempts: int = 200) -> int:
+    """A free port in STABLE_PORT_RANGE, starting from a per-install deterministic point."""
+    import hashlib
+
+    lo, hi = STABLE_PORT_RANGE
+    start = int(hashlib.sha256(seed.encode()).hexdigest(), 16) % (hi - lo)
+    for i in range(attempts):
+        port = lo + (start + i * 37) % (hi - lo)
+        if _can_bind(port):
+            return port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:     # last resort
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
+
+
+def _pick_port(preferred: int | None, wait_s: float = 5.0, seed: str = "") -> int:
+    """The persisted port when it's usable; retried briefly (it may be in TIME_WAIT after a restart)."""
+    if preferred:
+        deadline = time.monotonic() + wait_s
+        while True:
+            if _can_bind(preferred):
+                return preferred
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.25)
+    return free_stable_port(seed or str(preferred))
 
 
 class Daemon:
@@ -181,9 +211,13 @@ class Daemon:
             preferred = int(f.read_text().strip())
         except (OSError, ValueError):
             pass
-        port = _pick_port(preferred)
+        port = _pick_port(preferred, seed=self.paths.instance_id)
         if port != preferred:
             write_private(f, str(port).encode())
+            if preferred:
+                self.http_port_moved = (preferred, port)
+                log.error("http hook port %s is busy; listening on %s instead: client hooks need `arbiter setup`",
+                          preferred, port)
         return port
 
     def _write_record(self) -> None:
@@ -577,6 +611,7 @@ class Daemon:
             "engine": self.engine.summary(), "gate_mode": self.config.get("completion.gate_mode", "annotate"),
             "retrieval": self.retrieval.summary() if self.retrieval else None,
             "controller": self.flags.enabled("controller"), "open_breakers": self.board.open_names(),
+            "http_port_moved": getattr(self, "http_port_moved", None),
             "shedding": self.engine.shedder.snapshot(),
             "client_homes": {k: os.environ.get(k) for k in ("CODEX_HOME", "CLAUDE_CONFIG_DIR", "ARBITER_CLIENT_HOME")},
         }

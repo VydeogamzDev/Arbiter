@@ -124,12 +124,35 @@ def gather(paths: ArbiterPaths, env: ClientEnv | None = None, round_trips: bool 
                 entry["mcp_round_trip"] = mcp_round_trip(cmd) if cmd else {"ok": False, "error": "no MCP entry"}
                 if (p.hooks or {}).get("transport") == "http":
                     entry["http_round_trip"] = http_round_trip(paths)
+                    entry["hook_port"] = hook_port_check(p, env, paths)
             clients.append(entry)
     finally:
         if conn is not None:
             conn.close()
     report["clients"] = clients
+    from arbiter_agent import appcontainer
+
+    report["packaged"] = appcontainer.package_name()
     return report
+
+
+def hook_port_check(profile: Any, env: Any, paths: ArbiterPaths) -> dict[str, Any]:
+    """The port in the client's Arbiter http hook URLs must be the one the daemon listens on."""
+    import re
+
+    daemon_port = (read_record(paths).get("http") or {}).get("port")
+    target = profile.expand((profile.hooks or {}).get("file"), env)
+    try:
+        text = target.read_text(encoding="utf-8") if target else ""
+    except OSError:
+        text = ""
+    ports = sorted({int(m) for m in re.findall(r"127\.0\.0\.1:(\d+)/hook/", text)})
+    if not ports:
+        return {"ok": False, "error": "no Arbiter http hook URLs found"}
+    ok = daemon_port is not None and ports == [int(daemon_port)]
+    return {"ok": ok, "hook_ports": ports, "daemon_port": daemon_port,
+            **({} if ok else {"error": f"hooks point to {ports}, the daemon listens on {daemon_port}; "
+                                       "re-run `arbiter setup` to repair"})}
 
 
 def render(report: dict[str, Any]) -> str:
@@ -145,6 +168,9 @@ def render(report: dict[str, Any]) -> str:
     else:
         lines.append(f"daemon: not running ({d.get('reason')}); it starts automatically on first use")
     lines.append(f"storage: {report['storage_bytes'] / 1e6:.1f} MB")
+    if report.get("packaged"):
+        lines.append(f"note: this terminal runs inside the packaged app {report['packaged']}: AppData writes are "
+                     "redirected, so setup skips client configs under AppData (Arbiter's home is ~/.arbiter)")
     if report["path_arbiter"]["shadowed"]:
         lines.append(f"warning: another 'arbiter' is first on PATH: {report['path_arbiter']['which']}")
     if not report["clients"]:
@@ -157,11 +183,12 @@ def render(report: dict[str, Any]) -> str:
                      f"verified tiers: {c['verified_fmt']}  (configured: {' '.join(c['configured']) or 'none'})")
         for chk in c["checks"]:
             lines.append(f"  [{'ok' if chk['ok'] else '--'}] {chk['name']}: {chk['detail']}")
-        for key in ("mcp_round_trip", "http_round_trip"):
+        for key in ("mcp_round_trip", "http_round_trip", "hook_port"):
             if key in c:
                 rt = c[key]
                 lines.append(f"  [{'ok' if rt['ok'] else '!!'}] {key.replace('_', ' ')}: "
-                             + (f"{rt['latency_ms']} ms" if rt["ok"] else rt.get("error", rt.get("detail", ""))))
+                             + ((f"{rt['latency_ms']} ms" if "latency_ms" in rt else f"port {rt.get('daemon_port')}")
+                                if rt["ok"] else rt.get("error", rt.get("detail", ""))))
         if c.get("version"):
             v = c["version"]
             lines.append(f"  version: session {v.get('session_cli_version')} ({v.get('session_originator')})"
