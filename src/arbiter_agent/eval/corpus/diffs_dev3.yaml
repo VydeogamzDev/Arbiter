@@ -1,0 +1,45 @@
+# Diff-risk development set 3: formerly held-out v2 (2026-09-25). RETIRED as held-out after its
+# single run measured 7.5% dangerous misses (3/40: Go Sprintf SQL, cookie httponly=False, hard-coded key)
+# and the rules were extended. Now a development set; the held-out set is heldout/diffs_v3.yaml.
+version: 2
+cases:
+  - {id: v2-django-raw-sql, min_level: high, files: [{path: shop/queries.py, added: ["    return Product.objects.raw('SELECT * FROM shop_product WHERE sku = ' + sku)"]}]}
+  - {id: v2-node-exec, min_level: high, files: [{path: scripts/build.js, added: ["exec(`git checkout ${branch}`, cb);"]}]}
+  - {id: v2-go-sql-sprintf, min_level: high, files: [{path: internal/store/users.go, added: ["    q := fmt.Sprintf(\"SELECT * FROM users WHERE id = %s\", id)", "    rows, err := db.Query(q)"]}]}
+  - {id: v2-java-deserialize, min_level: high, files: [{path: src/main/java/com/acme/Cache.java, added: ["    ObjectInputStream in = new ObjectInputStream(stream);"]}]}
+  - {id: v2-php-unserialize, min_level: high, files: [{path: lib/session.php, added: ["$data = unserialize($_COOKIE['prefs']);"]}]}
+  - {id: v2-react-html, min_level: high, files: [{path: web/src/Comment.tsx, added: ["  return <div dangerouslySetInnerHTML={{ __html: body }} />;"]}]}
+  - {id: v2-debug-true, min_level: high, files: [{path: project/settings/production.py, added: ["DEBUG = True"], removed: ["DEBUG = False"]}]}
+  - {id: v2-allowed-hosts, min_level: high, files: [{path: project/settings.py, added: ["ALLOWED_HOSTS = ['*']"]}]}
+  - {id: v2-cookie-httponly-off, min_level: high, files: [{path: web/cookies.py, added: ["    resp.set_cookie('sid', sid, httponly=False)"], removed: ["    resp.set_cookie('sid', sid, httponly=True, secure=True)"]}]}
+  - {id: v2-hardcoded-key, min_level: high, files: [{path: app/integrations/stripe_client.py, added: ["STRIPE_API_KEY = 'sk_live_0123456789'"]}]}
+  - {id: v2-mongo-drop, min_level: high, files: [{path: tools/reset_db.py, added: ["    client.app.users.drop()"]}]}
+  - {id: v2-queryset-delete, min_level: high, files: [{path: accounts/tasks.py, added: ["    User.objects.filter(is_active=False).delete()"]}]}
+  - {id: v2-rails-migration-remove, min_level: critical, files: [{path: db/migrate/20260925_remove_legacy.rb, status: A, added: ["    remove_column :users, :legacy_token"]}]}
+  - {id: v2-prisma-schema, min_level: high, files: [{path: prisma/schema.prisma, added: ["  role Role @default(USER)"]}]}
+  - {id: v2-avro-schema, min_level: high, files: [{path: schemas/event.avsc, added: ["    {\"name\": \"region\", \"type\": \"string\"}"]}]}
+  - {id: v2-rust-pub-fn-removed, min_level: high, files: [{path: crates/core/src/lib.rs, removed: ["pub fn parse(input: &str) -> Result<Ast> {"], added: []}]}
+  - {id: v2-go-exported-renamed, min_level: high, files: [{path: pkg/client/client.go, added: ["func NewClientWithOptions(opts Options) *Client {"], removed: ["func NewClient(opts Options) *Client {"]}]}
+  - {id: v2-jest-skip, min_level: high, files: [{path: web/src/cart.test.ts, added: ["describe.skip('cart totals', () => {"], removed: ["describe('cart totals', () => {"]}]}
+  - {id: v2-go-test-skip, min_level: high, files: [{path: pkg/client/client_test.go, added: ["    t.Skip(\"flaky on CI\")"]}]}
+  - {id: v2-coverage-threshold, min_level: high, files: [{path: .coveragerc, added: ["fail_under = 40"], removed: ["fail_under = 85"]}]}
+  - {id: v2-dockerfile-root, min_level: medium, files: [{path: Dockerfile, added: ["USER root"], removed: ["USER app"]}]}
+  - {id: v2-workflow-secret, min_level: critical, files: [{path: .github/workflows/release.yml, added: ["        env:", "          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}"]}]}
+  - {id: v2-terraform-sg, min_level: critical, files: [{path: terraform/network.tf, added: ["  cidr_blocks = [\"0.0.0.0/0\"]"]}]}
+  - {id: v2-kotlin-coroutine, min_level: medium, files: [{path: app/src/main/kotlin/Sync.kt, added: ["    scope.launch { syncAll() }"]}]}
+  - {id: v2-python-thread-pool, min_level: medium, files: [{path: indexer/run.py, added: ["    with concurrent.futures.ThreadPoolExecutor(8) as ex:"]}]}
+  - {id: v2-js-promise-all, min_level: medium, files: [{path: web/src/load.js, added: ["  const results = await Promise.all(urls.map(fetch));"]}]}
+  - {id: v2-cargo-dep, min_level: medium, files: [{path: Cargo.toml, added: ["serde = \"1.0.210\""], removed: ["serde = \"1.0.190\""]}]}
+  - {id: v2-requirements-pin, min_level: medium, files: [{path: requirements.txt, added: ["django==5.1"], removed: ["django==4.2"]}]}
+  - {id: v2-business-logic, min_level: medium, files: [{path: billing/discounts.py, added: ["    if cart.total > 100:", "        return 0.1"]}]}
+  - {id: v2-error-swallow, min_level: medium, files: [{path: sync/worker.py, added: ["    except Exception:", "        pass"]}]}
+  - {id: v2-css, min_level: low, files: [{path: web/src/styles/button.css, added: [".btn { padding: 8px 12px; }"], removed: [".btn { padding: 6px 10px; }"]}]}
+  - {id: v2-markdown-api-docs, min_level: low, files: [{path: docs/api/users.md, added: ["`DELETE /users/:id` removes a user."]}]}
+  - {id: v2-go-comment, min_level: low, files: [{path: pkg/client/doc.go, added: ["// Package client talks to the Acme API."]}]}
+  - {id: v2-test-added-js, min_level: low, files: [{path: web/src/format.test.ts, added: ["it('formats cents', () => {", "  expect(format(150)).toBe('$1.50');", "});"]}]}
+  - {id: v2-license-year, min_level: low, files: [{path: LICENSE, added: ["Copyright 2026 Acme"], removed: ["Copyright 2025 Acme"]}]}
+  - {id: v2-rst-docs, min_level: low, files: [{path: docs/index.rst, added: ["Getting started", "==============="]}]}
+  - {id: v2-mixed-docs-and-deserialize, min_level: high, files: [{path: README.md, added: ["Cache now persists."]}, {path: cache/disk.py, added: ["    return marshal.loads(raw)"]}]}
+  - {id: v2-mixed-css-and-workflow, min_level: critical, files: [{path: web/app.css, added: ["body { margin: 0 }"]}, {path: .github/workflows/pages.yml, added: ["      - run: npm run deploy"]}]}
+  - {id: v2-password-reset-token-length, min_level: high, files: [{path: accounts/password_reset.py, added: ["    token = secrets.token_hex(4)"], removed: ["    token = secrets.token_hex(32)"]}]}
+  - {id: v2-signature-check-removed, min_level: critical, files: [{path: webhooks/security.py, removed: ["    if not hmac.compare_digest(expected, received):", "        abort(401)"], added: []}]}

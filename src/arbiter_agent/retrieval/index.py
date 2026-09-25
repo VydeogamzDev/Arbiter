@@ -98,8 +98,9 @@ def list_files(ident: RepoIdentity) -> list[str]:
     return files
 
 
-def _fts_query(tokens: list[str], op: str) -> str:
-    return f" {op} ".join('"' + t.replace('"', "") + '"' for t in tokens)
+def _fts_query(tokens: list[str], op: str, prefix: bool = False) -> str:
+    star = "*" if prefix else ""
+    return f" {op} ".join('"' + t.replace('"', "") + '"' + star for t in tokens)
 
 
 class RepoIndex:
@@ -265,7 +266,9 @@ class RepoIndex:
         return out
 
     def search(self, root: str, query: str, limit: int = 20, policy: AccessPolicy | None = None,
-               path_glob: str | None = None) -> list[dict[str, Any]]:
+               path_glob: str | None = None, any_terms: bool = False) -> list[dict[str, Any]]:
+        """``any_terms``: match any query word as a prefix (``tax`` finds ``tax_rate``); used by context
+        retrieval, where recall matters more than the tightest match."""
         import fnmatch
 
         tokens = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", query)][:12]
@@ -274,11 +277,11 @@ class RepoIndex:
         with self.lock:
             vid = int(self._view(root)["id"])
             rows: list[sqlite3.Row] = []
-            for op in ("AND", "OR"):
+            for op in (("OR",) if any_terms else ("AND", "OR")):
                 rows = self.conn.execute(
                     "SELECT c.sha, c.start_line, c.end_line, c.text, bm25(chunks) AS score FROM chunks c "
                     "WHERE chunks MATCH ? AND c.sha IN (SELECT sha FROM view_files WHERE view_id = ?) "
-                    "ORDER BY score LIMIT ?", (_fts_query(tokens, op), vid, limit * 3)).fetchall()
+                    "ORDER BY score LIMIT ?", (_fts_query(tokens, op, any_terms), vid, limit * 3)).fetchall()
                 if rows:
                     break
             paths = self._paths_by_sha(vid, {r["sha"] for r in rows})
@@ -342,6 +345,27 @@ class RepoIndex:
                 uniq.append(r)
         importers = sorted({i for d in defs for i in self.related(root, d["path"])["importers"]})
         return {"definitions": defs, "references": uniq[:limit], "importers": importers}
+
+    def symbols_like(self, root: str, fragments: list[str], limit: int = 40) -> list[tuple[str, str]]:
+        """(path, symbol) for symbols whose name contains any fragment (``tax`` -> ``add_tax``)."""
+        frags = [f for f in fragments if len(f) >= 3][:10]
+        if not frags:
+            return []
+        with self.lock:
+            vid = int(self._view(root)["id"])
+            where = " OR ".join("s.name LIKE ?" for _ in frags)
+            rows = self.conn.execute(
+                f"SELECT DISTINCT vf.path, s.name FROM symbols s JOIN view_files vf "
+                f"ON vf.sha = s.sha AND vf.view_id = ? WHERE {where} LIMIT ?",
+                (vid, *[f"%{f}%" for f in frags], limit)).fetchall()
+        return [(str(r["path"]), str(r["name"])) for r in rows]
+
+    def files(self, root: str) -> list[str]:
+        """Paths in the worktree's current view."""
+        with self.lock:
+            vid = int(self._view(root)["id"])
+            return sorted(r["path"] for r in self.conn.execute("SELECT path FROM view_files WHERE view_id = ?",
+                                                               (vid,)))
 
     def graph(self, root: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         """(file -> dependencies, file -> importers) for the view, cached per generation."""

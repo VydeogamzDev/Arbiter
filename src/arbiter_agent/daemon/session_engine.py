@@ -33,6 +33,7 @@ from arbiter_agent.policy.budgets import Budgets
 from arbiter_agent.policy.circuit_breaker import BreakerBoard
 from arbiter_agent.policy.overload import LoadShedder
 from arbiter_agent.reasoning.loop_detector import LoopDetector
+from arbiter_agent.retrieval.miss_detector import MissDetector
 from arbiter_agent.state import contract_compiler, contract_coverage, facts, goal_epochs
 from arbiter_agent.state import intent as intent_log
 from arbiter_agent.state.repo_identity import RepoIdentity, identify
@@ -58,6 +59,33 @@ def _runner_for(command: str) -> str | None:
     return None
 
 
+def _working_changes(root: str, base: str | None) -> list[Any] | None:
+    """Changed files in the worktree vs ``base`` (or HEAD): tracked diffs plus untracked files."""
+    import subprocess
+
+    from arbiter_agent.review.diff_risk import FileChange, parse_unified_diff
+
+    def git(*args: str) -> str | None:
+        try:
+            r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=10,
+                               encoding="utf-8", errors="replace")
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout if r.returncode == 0 else None
+
+    diff = git("diff", "-U0", "--no-color", base or "HEAD")
+    if diff is None:
+        return None
+    changes = parse_unified_diff(diff)
+    for rel in (git("ls-files", "--others", "--exclude-standard") or "").splitlines()[:200]:
+        try:
+            text = (Path(root) / rel).read_text(encoding="utf-8", errors="replace")[:20000]
+        except OSError:
+            continue
+        changes.append(FileChange(rel, "A", text.splitlines()))
+    return changes
+
+
 class SessionEngine:
     def __init__(self, *, db: Path, writer: Any, keyer: Callable[[bytes], str], config: Any, reducer: Any = None,
                  breakers: Breakers | None = None, background: bool = True, flags: Any = None) -> None:
@@ -76,6 +104,9 @@ class SessionEngine:
         self.shedder = LoadShedder({"engine_bg": lambda: (self.bg.backlog, self.bg.capacity)},
                                    latency=self.breakers.hook_latency)
         self.overrides: Any = None          # ui.overrides.Overrides (set by the daemon)
+        self.misses = MissDetector()        # retrieval misses (M9.2), fed by edits and retrievals
+        # root -> (files, reverse import graph) from the repository index (set by the daemon; M9.3)
+        self.graph_provider: Callable[[str], tuple[list[str], dict[str, set[str]]]] | None = None
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -384,6 +415,8 @@ class SessionEngine:
             self.stats["facts"] += 1
             if d.kind == "file_change":
                 bg.append(("integrity", sid, seq))
+                if d.subject:
+                    self.misses.edited(sid, self._rel(st, str(d.subject)))
             self._feed_loop(conn, st, {"id": fid, "kind": d.kind, "subject": d.subject, "status": d.status,
                                        "data": d.data, "source_seq": seq}, seq)
         return bg
@@ -469,6 +502,15 @@ class SessionEngine:
 
     def _read(self) -> sqlite3.Connection:
         return connect(self.db, readonly=True)
+
+    def _rel(self, st: dict[str, Any], path: str) -> str:
+        root = self._root(st)
+        p = path.replace("\\", "/")
+        if root:
+            r = root.replace("\\", "/").rstrip("/") + "/"
+            if p.lower().startswith(r.lower()):
+                return p[len(r):]
+        return p
 
     def _root(self, st: dict[str, Any]) -> str | None:
         repo = json.loads(st.get("repo_json") or "{}")
@@ -1094,6 +1136,69 @@ class SessionEngine:
             "verdict_now": ledger.verdict,
             **({} if light else {"ledger": ledger.to_dict(), "ledger_text": ledger.text()}),
         }
+
+    # ------------------------------------------------------------------ advisory signals (M9)
+    def signals(self, sid: str) -> dict[str, Any]:
+        """Host-facing session signals (spec §4.6.2): loop, no_progress, retrieval_miss, evidence_gaps."""
+        st, ledger = self.evaluate(sid, integrity_budget_s=0.3)
+        rc = self._read()
+        try:
+            fs = facts.load(rc, sid, ("test_run", "loop_alert", "file_change"))
+        finally:
+            rc.close()
+        epoch = int(st["goal_epoch"])
+        runs = [f for f in fs if f["kind"] == "test_run" and f["goal_epoch"] == epoch]
+        last_change = max([f["source_seq"] for f in fs if f["kind"] == "file_change"] or [0])
+        recent = runs[-3:]
+        passes_after_change = [f for f in runs if f["status"] == "pass" and f["source_seq"] > last_change]
+        no_progress = len(recent) >= 3 and all(f["status"] == "fail" for f in recent)
+        miss = self.misses.signal(sid)
+        loops = [f for f in fs if f["kind"] == "loop_alert" and f["goal_epoch"] == epoch]
+        return {"loop": bool(loops), "loop_alerts": len(loops), "no_progress": no_progress,
+                "verified_since_last_change": bool(passes_after_change), "retrieval_miss": miss["retrieval_miss"],
+                "retrieval_miss_reasons": miss["reasons"], "evidence_gaps": list(ledger.missing)[:10],
+                "integrity_alert": bool(ledger.integrity and getattr(ledger.integrity, "findings", None))}
+
+    def advice(self, sid: str) -> dict[str, Any]:
+        """Advisory output for hosted clients (T1): effort level and what to do, plus diff risk (shadow)."""
+        from arbiter_agent.reasoning.scheduler import advise_hosted
+
+        sig = self.signals(sid)
+        risk = self.diff_risk(sid)
+        ctx = {"failures": 3 if sig["no_progress"] else 0, "loop": sig["loop"], "no_progress": sig["no_progress"],
+               "retrieval_miss": sig["retrieval_miss"], "integrity_alert": sig["integrity_alert"],
+               "diff_risk": risk.get("level") if risk else None}
+        return {"signals": sig, "reasoning": advise_hosted(ctx), "diff_risk": risk}
+
+    def diff_risk(self, sid: str) -> dict[str, Any] | None:
+        """Diff risk for the session's changes against its baseline (M9.3, shadow)."""
+        from arbiter_agent.review import diff_risk as dr
+        from arbiter_agent.review import review_policy
+
+        if not self.enabled("diff_risk"):
+            return None
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+            b = baseline_mod.load(rc, sid)
+        finally:
+            rc.close()
+        root = self._root(st) if st else None
+        if not root:
+            return None
+        changes = _working_changes(root, b.head if b else None)
+        if changes is None:
+            return None
+        files: list[str] = []
+        rev: dict[str, set[str]] = {}
+        if self.graph_provider is not None:
+            try:
+                files, rev = self.graph_provider(root)
+            except Exception:
+                files, rev = [], {}
+        rep = review_policy.analyze(changes, files=files, rev=rev, floors=dr.floors_from_config(self.config),
+                                    salt=sid)
+        return {**rep.to_dict(), "summary": rep.summary()}
 
     def sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         rc = self._read()

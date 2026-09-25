@@ -1,0 +1,26 @@
+# Held-out retrieval queries, v1 (2026-09-25), on the TypeScript "notes" fixture: a language and
+# domain the retrieval code wasn't developed on. FROZEN: never tune retrieval against it.
+version: 1
+repo: notes
+queries:
+  - {id: n01, query: "tokens never expire", gold: [src/auth/tokens.ts]}
+  - {id: n02, query: "signup should reject duplicate emails", gold: [src/auth/accounts.ts, src/storage/db.ts]}
+  - {id: n03, query: "anyone can share a note they don't own", gold: [src/sharing/share.ts]}
+  - {id: n04, query: "invite emails are never actually sent", gold: [src/mail/mailer.ts, src/sharing/share.ts]}
+  - {id: n05, query: "search misses words with capital letters", gold: [src/search/searchIndex.ts]}
+  - {id: n06, query: "raise the maximum note size", gold: [src/config.ts, src/notes/noteService.ts]}
+  - {id: n07, query: "tags with spaces are stored twice", gold: [src/notes/tags.ts]}
+  - {id: n08, query: "requests without an Authorization header crash", gold: [src/http/middleware.ts, src/auth/tokens.ts]}
+  - {id: n09, query: "add an endpoint to delete a note", gold: [src/http/routes.ts, src/http/notesHandlers.ts, src/storage/db.ts]}
+  - {id: n10, query: "the JWT secret falls back to a dev value in production", gold: [src/config.ts]}
+  - {id: n11, query: "password hashing parameters", gold: [src/auth/accounts.ts]}
+  - {id: n12, query: "the collaborators table has no index", gold: [src/storage/migrations/001_init.sql]}
+  - {id: n13, query: "server port configuration", gold: [src/index.ts]}
+  - id: n14
+    query: "fix this"
+    errors: |
+      TypeError: Cannot read properties of undefined (reading 'split')
+          at verifyToken (src/auth/tokens.ts:9:52)
+          at src/http/middleware.ts:6:18
+    gold: [src/auth/tokens.ts, src/http/middleware.ts]
+  - {id: n15, query: "write tests for normalizeTags edge cases", symbols: [normalizeTags], gold: [src/notes/tags.ts, test/tags.test.ts]}

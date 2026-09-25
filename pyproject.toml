@@ -43,6 +43,7 @@ markers = [
 line-length = 120
 target-version = "py311"
 src = ["src", "tests"]
+extend-exclude = ["src/arbiter_agent/eval/corpus"]   # eval fixtures (sample repos) are data, not Arbiter code
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "RUF"]
@@ -62,6 +63,7 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 files = ["src/arbiter_agent"]
+exclude = ["src/arbiter_agent/eval/corpus/"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = true

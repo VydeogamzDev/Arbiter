@@ -1,0 +1,54 @@
+# Retrieval corpus for the M9.2 exit (recall >= 0.95). Each query lists the files a developer would
+# need to read to act on it ("gold"). Recall = gold files found in pins + the ranked top-k.
+# Queries may carry the context the engine has: an error, paths the user named, changed files.
+version: 1
+repo: shop
+queries:
+  - {id: q01, query: "bulk discount is applied at 9 items instead of 10", gold: [shop/pricing/discounts.py]}
+  - {id: q02, query: "tax rate is wrong in the cart total", gold: [shop/pricing/tax.py, shop/pricing/totals.py, shop/config.py]}
+  - {id: q03, query: "login accepts a wrong password", gold: [shop/users/auth.py]}
+  - {id: q04, query: "checkout should not create an order when the card is declined", gold: [shop/checkout/checkout.py, shop/payments/gateway.py]}
+  - {id: q05, query: "receipt email shows the amount in cents", gold: [shop/checkout/receipts.py]}
+  - {id: q06, query: "webhook signature verification", gold: [shop/payments/gateway.py, shop/api/handlers.py]}
+  - {id: q07, query: "stock goes negative when two carts reserve the same product", gold: [shop/catalog/inventory.py]}
+  - {id: q08, query: "search by product name is case sensitive", gold: [shop/catalog/products.py]}
+  - {id: q09, query: "refund an order that was already refunded", gold: [shop/payments/refunds.py]}
+  - {id: q10, query: "production database url comes from the environment", gold: [shop/config.py]}
+  - {id: q11, query: "add a route for refunds", gold: [shop/api/routes.py, shop/api/handlers.py, shop/payments/refunds.py]}
+  - {id: q12, query: "email validation when updating the profile", gold: [shop/users/profile.py]}
+  - {id: q13, query: "switch password hashing iterations", gold: [shop/users/auth.py]}
+  - {id: q14, query: "Product dataclass needs a currency field", gold: [shop/db/models.py]}
+  - {id: q15, query: "the app factory should accept a settings override", gold: [shop/app.py, shop/config.py]}
+  - {id: q16, query: "session query helper should support executemany", gold: [shop/db/session.py]}
+  - id: q17
+    query: "fix this crash"
+    errors: |
+      Traceback (most recent call last):
+        File "shop/api/handlers.py", line 18, in handle_checkout
+          return checkout(app["db"], req["cart"], app["settings"], req["card_token"])
+        File "shop/checkout/checkout.py", line 6, in checkout
+          total = cart.total(settings)
+        File "shop/cart/cart.py", line 14, in total
+          return cart_total(self.lines, settings)
+        File "shop/pricing/totals.py", line 8, in cart_total
+          return add_tax(discounted, settings["tax_rate"])
+      KeyError: 'tax_rate'
+    gold: [shop/pricing/totals.py, shop/cart/cart.py, shop/checkout/checkout.py, shop/config.py]
+  - id: q18
+    query: "OutOfStock raised for a product that is in stock"
+    errors: |
+      shop.catalog.inventory.OutOfStock: SKU-42
+        at reserve_stock (shop/catalog/inventory.py:13)
+    gold: [shop/catalog/inventory.py, shop/catalog/products.py]
+  - {id: q19, query: "make check_password constant time", symbols: [check_password], gold: [shop/users/auth.py]}
+  - {id: q20, query: "rename apply_discounts to discount_subtotal", symbols: [apply_discounts], gold: [shop/pricing/discounts.py, shop/pricing/totals.py, tests/test_pricing.py]}
+  - {id: q21, query: "look at shop/notify/email.py and add retries", paths: [shop/notify/email.py], gold: [shop/notify/email.py]}
+  - {id: q22, query: "tests for the pricing module", gold: [tests/test_pricing.py, shop/pricing/discounts.py, shop/pricing/tax.py]}
+  - {id: q23, query: "the checkout test is empty, write a real one", gold: [tests/test_checkout.py, shop/checkout/checkout.py]}
+  - {id: q24, query: "continue the change", changed: [shop/pricing/tax.py], gold: [shop/pricing/tax.py, shop/pricing/totals.py, tests/test_pricing.py]}
+  - {id: q25, query: "orders table status values", gold: [shop/db/models.py, shop/checkout/checkout.py, shop/payments/refunds.py]}
+  - {id: q26, query: "where do we charge the card", gold: [shop/payments/gateway.py, shop/checkout/checkout.py]}
+  - {id: q27, query: "currency setting is ignored when charging", gold: [shop/config.py, shop/checkout/checkout.py, shop/payments/gateway.py]}
+  - {id: q28, query: "log every email that is sent", gold: [shop/notify/email.py]}
+  - {id: q29, query: "reserve_stock should be atomic", symbols: [reserve_stock], gold: [shop/catalog/inventory.py, shop/db/session.py]}
+  - {id: q30, query: "which endpoints exist", gold: [shop/api/routes.py]}

@@ -122,6 +122,16 @@ class RetrievalService:
             info[k] = [x for x in info[k] if policy.allowed(x)]
         return self._envelope(ident, idx, res, info)
 
+    def context(self, cwd: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Files to read for a task (M9.2, advisory): pins first, then the fused ranking, adaptive k."""
+        from arbiter_agent.retrieval import candidates, reranker
+
+        ident, idx, policy, res = self.prepare(cwd)
+        self.stats["queries"] += 1
+        qc = candidates.QueryContext.from_dict(ctx)
+        cands = candidates.gather(idx, ident.root, qc, policy=policy)
+        return self._envelope(ident, idx, res, reranker.rerank(cands, qc).to_dict())
+
     def status(self, cwd: str) -> dict[str, Any]:
         ident, idx, _, res = self.prepare(cwd, budget_s=0.5)
         return self._envelope(ident, idx, res, {"db": str(idx.db_path)})

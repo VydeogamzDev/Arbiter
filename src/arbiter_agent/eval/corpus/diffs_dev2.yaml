@@ -1,0 +1,126 @@
+# Diff-risk development set 2: formerly held-out v1 (2026-09-25). RETIRED as held-out after its
+# first run exposed 6 dangerous misses (CORS, SQL f-string, test skip, bulk delete, os.system,
+# yaml.load) and the rules were extended. Now a development set; the held-out set is heldout/diffs_v2.yaml.
+version: 1
+cases:
+  - id: ho-oauth-scope-widened
+    min_level: high
+    files:
+      - {path: services/oauth/scopes.py, added: ["DEFAULT_SCOPES = ['read', 'write', 'admin']"], removed: ["DEFAULT_SCOPES = ['read']"]}
+  - id: ho-rate-limit-removed
+    min_level: high
+    files:
+      - {path: api/throttling.py, removed: ["    if requests_this_minute(user) > LIMIT:", "        raise TooManyRequests()"], added: []}
+  - id: ho-cors-wildcard
+    min_level: high
+    files:
+      - {path: server/app.py, added: ["app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True)"]}
+  - id: ho-sql-string-format
+    min_level: high
+    files:
+      - {path: repo/users.py, added: ["    cur.execute(f\"SELECT * FROM users WHERE name = '{name}'\")"], removed: ["    cur.execute('SELECT * FROM users WHERE name = %s', (name,))"]}
+  - id: ho-rename-column
+    min_level: high
+    files:
+      - {path: migrations/0019_rename.py, status: A, added: ["    op.alter_column('orders', 'amount', new_column_name='total')"]}
+  - id: ho-drop-column
+    min_level: critical
+    files:
+      - {path: migrations/0020_drop.py, status: A, added: ["    op.drop_column('users', 'legacy_id')"]}
+  - id: ho-graphql-field-removed
+    min_level: high
+    files:
+      - {path: schema/api.graphql, removed: ["  email: String!"], added: []}
+  - id: ho-exported-ts-renamed
+    min_level: high
+    files:
+      - {path: packages/sdk/src/index.ts, added: ["export function createClient(opts) {"], removed: ["export function makeClient(opts) {"]}
+  - id: ho-cron-deletes-files
+    min_level: high
+    files:
+      - {path: jobs/nightly.py, added: ["    for p in old_files: os.remove(p)"]}
+  - id: ho-helm-values
+    min_level: critical
+    files:
+      - {path: helm/values.yaml, added: ["resources:", "  limits:", "    memory: 256Mi"]}
+  - id: ho-github-action-perms
+    min_level: critical
+    files:
+      - {path: .github/workflows/ci.yml, added: ["permissions: write-all"]}
+  - id: ho-test-skip-added
+    min_level: high
+    files:
+      - {path: tests/test_checkout.py, added: ["@pytest.mark.skip(reason='flaky')"]}
+  - id: ho-fixture-data-edited
+    min_level: high
+    files:
+      - {path: tests/fixtures/orders.json, added: ["  {\"id\": 1, \"total\": 0}"], removed: ["  {\"id\": 1, \"total\": 120}"]}
+  - id: ho-retry-loop
+    min_level: medium
+    files:
+      - {path: clients/http.py, added: ["    for attempt in range(3):", "        try:", "            return send(req)", "        except Timeout:", "            continue"]}
+  - id: ho-new-helper
+    min_level: medium
+    files:
+      - {path: src/text/slug.py, status: A, added: ["def slugify(s):", "    return re.sub(r'\\W+', '-', s).strip('-').lower()"]}
+  - id: ho-bump-node
+    min_level: medium
+    files:
+      - {path: package.json, added: ["  \"engines\": {\"node\": \">=20\"}"], removed: ["  \"engines\": {\"node\": \">=18\"}"]}
+  - id: ho-yaml-feature-flag
+    min_level: medium
+    files:
+      - {path: config/features.yaml, added: ["new_checkout: true"], removed: ["new_checkout: false"]}
+  - id: ho-goroutine-waitgroup
+    min_level: medium
+    files:
+      - {path: internal/pool/pool.go, added: ["    wg.Add(1)", "    go func() { defer wg.Done(); work() }()"]}
+  - id: ho-log-message
+    min_level: medium
+    files:
+      - {path: app/orders.py, added: ["    log.info('order created', extra={'id': order.id})"]}
+  - id: ho-typo-docstring
+    min_level: low
+    files:
+      - {path: app/orders.py, added: ["    \"\"\"Create an order and return its id.\"\"\""], removed: ["    \"\"\"Creat an order and retun its id.\"\"\""]}
+  - id: ho-contributing
+    min_level: low
+    files:
+      - {path: CONTRIBUTING.md, added: ["Run the linter before opening a PR."]}
+  - id: ho-add-test-case
+    min_level: low
+    files:
+      - {path: tests/test_slug.py, added: ["def test_unicode():", "    assert slugify('Café') == 'caf'"]}
+  - id: ho-security-docs
+    min_level: low
+    files:
+      - {path: docs/security/overview.md, added: ["Passwords are hashed with bcrypt."]}
+  - id: ho-js-comment
+    min_level: low
+    files:
+      - {path: web/app.js, added: ["// keep in sync with the server's page size"]}
+  - id: ho-mixed-config-and-auth
+    min_level: high
+    files:
+      - {path: config/app.toml, added: ["timeout = 30"]}
+      - {path: app/auth/tokens.py, added: ["TOKEN_TTL_HOURS = 72"], removed: ["TOKEN_TTL_HOURS = 1"]}
+  - id: ho-permission-check-inverted
+    min_level: critical
+    files:
+      - {path: app/permissions.py, removed: ["    if not user.is_admin:", "        raise Forbidden()"], added: ["    if user.is_admin:", "        raise Forbidden()"]}
+  - id: ho-delete-many
+    min_level: high
+    files:
+      - {path: services/cleanup.py, added: ["    db.orders.delete_many({'status': 'draft'})"]}
+  - id: ho-subprocess-user-input
+    min_level: high
+    files:
+      - {path: tools/convert.py, added: ["    os.system('convert ' + filename)"]}
+  - id: ho-yaml-load
+    min_level: high
+    files:
+      - {path: loader/config.py, added: ["    return yaml.load(f)"], removed: ["    return yaml.safe_load(f)"]}
+  - id: ho-remove-validation
+    min_level: high
+    files:
+      - {path: forms/signup.py, removed: ["    if len(password) < 12:", "        raise ValidationError('too short')"], added: []}

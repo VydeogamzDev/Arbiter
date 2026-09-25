@@ -1,0 +1,45 @@
+# Diff-risk development set 4: formerly held-out v3 (2026-09-25). RETIRED as held-out after its
+# single run measured 22.5% under-rated high-risk changes (9/40; 0 rated low) and the rules were
+# extended. Now a development set. The next held-out set must come from real, independently labeled diffs.
+version: 3
+cases:
+  - {id: v3-ssrf-requests, min_level: high, files: [{path: fetcher/proxy.py, added: ["    return requests.get(request.args['url'], allow_redirects=True)"]}]}
+  - {id: v3-path-traversal, min_level: high, files: [{path: files/download.py, added: ["    return send_file(os.path.join(BASE, request.args['name']))"], removed: ["    return send_file(safe_join(BASE, request.args['name']))"]}]}
+  - {id: v3-xss-template-autoescape-off, min_level: high, files: [{path: web/templates.py, added: ["env = Environment(loader=loader, autoescape=False)"], removed: ["env = Environment(loader=loader, autoescape=True)"]}]}
+  - {id: v3-weak-random-token, min_level: high, files: [{path: accounts/invites.py, added: ["    code = ''.join(random.choice(ALPHABET) for _ in range(8))"], removed: ["    code = secrets.token_urlsafe(16)"]}]}
+  - {id: v3-md5-signature, min_level: high, files: [{path: api/webhooks.py, added: ["    sig = hashlib.md5(body + SECRET).hexdigest()"], removed: ["    sig = hmac.new(SECRET, body, 'sha256').hexdigest()"]}]}
+  - {id: v3-jwt-none-alg, min_level: high, files: [{path: api/tokens.py, added: ["    jwt.decode(tok, algorithms=['none', 'HS256'])"], removed: ["    jwt.decode(tok, KEY, algorithms=['HS256'])"]}]}
+  - {id: v3-sql-knex-raw, min_level: high, files: [{path: server/db/orders.js, added: ["  return knex.raw(`SELECT * FROM orders WHERE user_id = ${userId}`);"]}]}
+  - {id: v3-sqlalchemy-text-format, min_level: high, files: [{path: repo/search.py, added: ["    q = text(\"SELECT * FROM items WHERE name LIKE '%\" + term + \"%'\")"]}]}
+  - {id: v3-admin-route-no-auth, min_level: high, files: [{path: server/routes/admin.ts, added: ["router.post('/admin/users/:id/promote', promoteUser);"], removed: ["router.post('/admin/users/:id/promote', requireAdmin, promoteUser);"]}]}
+  - {id: v3-ruby-send, min_level: high, files: [{path: app/controllers/reports_controller.rb, added: ["    @report.send(params[:action_name])"]}]}
+  - {id: v3-java-sql-concat, min_level: high, files: [{path: src/main/java/com/acme/UserDao.java, added: ["    stmt.executeQuery(\"SELECT * FROM users WHERE email = '\" + email + \"'\");"]}]}
+  - {id: v3-csharp-process, min_level: high, files: [{path: Tools/Runner.cs, added: ["    Process.Start(\"cmd.exe\", \"/c \" + userCommand);"]}]}
+  - {id: v3-private-key-committed, min_level: high, files: [{path: deploy_keys/id_rsa, status: A, added: ["-----BEGIN RSA PRIVATE KEY-----", "MIIEowIBAAKCAQEA7", "-----END RSA PRIVATE KEY-----"]}]}
+  - {id: v3-aws-key-in-config, min_level: high, files: [{path: app/config/aws.py, added: ["AWS_ACCESS_KEY_ID = 'AKIAIOSFODNN7EXAMPLE'"]}]}
+  - {id: v3-django-migration-alter, min_level: high, files: [{path: shop/migrations/0012_price.py, status: A, added: ["        migrations.AlterField(model_name='product', name='price', field=models.DecimalField(max_digits=10, decimal_places=2)),"]}]}
+  - {id: v3-django-remove-field, min_level: critical, files: [{path: shop/migrations/0013_remove.py, status: A, added: ["        migrations.RemoveField(model_name='order', name='coupon'),"]}]}
+  - {id: v3-laravel-drop, min_level: critical, files: [{path: database/migrations/2026_09_25_drop_logs.php, status: A, added: ["        Schema::dropIfExists('logs');"]}]}
+  - {id: v3-redis-flushall, min_level: high, files: [{path: ops/reset_cache.py, added: ["    r.flushall()"]}]}
+  - {id: v3-s3-bucket-delete, min_level: high, files: [{path: ops/cleanup.py, added: ["    s3.Bucket(name).objects.all().delete()"]}]}
+  - {id: v3-git-force-push-script, min_level: high, files: [{path: scripts/sync.sh, added: ["git push --force origin main"]}]}
+  - {id: v3-proto-field-removed, min_level: high, files: [{path: api/proto/user.proto, removed: ["  string phone = 7;"], added: []}]}
+  - {id: v3-openapi-required, min_level: high, files: [{path: spec/openapi.json, added: ["        \"required\": [\"tenant_id\"],"]}]}
+  - {id: v3-python-public-renamed, min_level: high, files: [{path: sdk/client.py, added: ["def send_message(channel, text):"], removed: ["def post_message(channel, text):"]}]}
+  - {id: v3-pytest-ini-addopts, min_level: high, files: [{path: pytest.ini, added: ["addopts = -k 'not slow and not payments'"]}]}
+  - {id: v3-jest-config-ignore, min_level: high, files: [{path: jest.config.js, added: ["  testPathIgnorePatterns: ['/node_modules/', '/checkout/'],"]}]}
+  - {id: v3-xfail-added, min_level: high, files: [{path: tests/test_refunds.py, added: ["@pytest.mark.xfail"]}]}
+  - {id: v3-github-pull-request-target, min_level: critical, files: [{path: .github/workflows/pr.yml, added: ["on: pull_request_target"], removed: ["on: pull_request"]}]}
+  - {id: v3-fly-deploy, min_level: critical, files: [{path: fly.toml, added: ["  min_machines_running = 0"], removed: ["  min_machines_running = 2"]}]}
+  - {id: v3-asyncio-gather, min_level: medium, files: [{path: crawler/run.py, added: ["    results = await asyncio.gather(*tasks)"]}]}
+  - {id: v3-java-synchronized, min_level: medium, files: [{path: src/main/java/com/acme/Counter.java, added: ["  public synchronized void inc() { n++; }"]}]}
+  - {id: v3-npm-dep, min_level: medium, files: [{path: package.json, added: ["    \"lodash\": \"^4.17.21\","]}]}
+  - {id: v3-gradle-dep, min_level: medium, files: [{path: build.gradle, added: ["    implementation 'com.squareup.okhttp3:okhttp:4.12.0'"]}]}
+  - {id: v3-refactor-helper, min_level: medium, files: [{path: src/reports/format.py, added: ["def _fmt(n):", "    return f'{n:,.2f}'"], removed: ["def _fmt(n):", "    return str(round(n, 2))"]}]}
+  - {id: v3-go-error-wrap, min_level: medium, files: [{path: internal/store/get.go, added: ["    if err != nil {", "        return nil, fmt.Errorf(\"get user: %w\", err)", "    }"]}]}
+  - {id: v3-scss, min_level: low, files: [{path: web/styles/_theme.scss, added: ["$primary: #3355ff;"], removed: ["$primary: #2244ee;"]}]}
+  - {id: v3-docs-migration-guide, min_level: low, files: [{path: docs/migration-guide.md, added: ["Run `DROP TABLE legacy` only after backing up."]}]}
+  - {id: v3-python-comment, min_level: low, files: [{path: src/reports/format.py, added: ["# Format numbers with thousands separators."]}]}
+  - {id: v3-new-go-test, min_level: low, files: [{path: internal/store/get_test.go, status: A, added: ["func TestGet(t *testing.T) {", "    if got := get(1); got == nil { t.Fatal(\"nil\") }", "}"]}]}
+  - {id: v3-mixed-scss-and-sql, min_level: high, files: [{path: web/styles/app.scss, added: ["body { color: #111; }"]}, {path: db/queries/report.sql, added: ["CREATE INDEX idx_orders_user ON orders(user_id);"]}]}
+  - {id: v3-mixed-test-and-key, min_level: high, files: [{path: tests/test_api.py, added: ["def test_ok():", "    assert call()"]}, {path: app/settings/prod.py, added: ["SENTRY_DSN_SECRET = 'a8f3k2l9q0w7e6r5'"]}]}

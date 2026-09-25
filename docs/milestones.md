@@ -11,7 +11,7 @@ Conventions:
 
 ```text
 Core:  M0 spikes ✅ → M1 foundations ✅ → M2 clients+setup ✅ → M3 task state ✅ → M4 gate ✅ ══► v0.1 (not published: building the full version)
-       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers ✅ → M9 advisory
+       → M5 coverage ✅ → M6 indexes ✅ → M7 SemIf (code ✅, GPU runs pending) → M8 breakers ✅ → M9 advisory ✅ (diff-risk held-out gap)
        → M10 gateway → M11 Hivemind host + model/effort → M12 verify auto → M13 context
        → M14 optional component inside the Hivemind app (later)
 Research (after core is stable, never blocks it): R1 speculation · R2/R3 learned policy · R4 branching · R5 backend · R6 fine-tuned sensors
@@ -240,7 +240,7 @@ Stage 4 · Build step 23 · **Required before any automatic stage** (decision 00
 - **Cascade, §15.5 priority** with evidence floors (UNKNOWN never becomes PASS by preference), **authority** (agents can only request one-turn bypasses; weakening integrity needs an interactive user), **budgets and overload shedding** (integrity is never shed).
 - **Controls:** `arbiter control`, `arbiter breakers`, and the MCP tool `arbiter_controls`.
 
-## M9 — Advisory modules
+## M9 — Advisory modules ✅ Done 2026-09-25 (exit partly met)
 Stage 5 · Build steps 24–26
 
 - **M9.1 Reasoning Scheduler (advisory)**, T1/T3/T4: `reasoning/capability_lattice`, `scheduler`, `leases`, `hysteresis`, `risk_floors`, `update_confirmation`. Chooses **model × effort** (§8.8). Surfaced within the injection budget, and through Host Advisory API v0 (`recommend_call`, `session_signals`, `report_outcome`) in **shadow** mode for Hivemind, which logs recommendations but doesn't apply them.
@@ -248,6 +248,15 @@ Stage 5 · Build steps 24–26
 - **M9.3 Diff Risk (shadow)**, T1/T2: `review/diff_risk`, `blast_radius`, `review_policy`, `test_mapper`, `test_scheduler`.
 
 **Exit:** dangerous misses ≤ 1% of tasks, retrieval recall ≥ 0.95, and an understandable audit trail.
+
+**Result** (decision [0032](decisions/0032-m9-advisory-modules.md); `tests/test_advisory.py`, `arbiter eval --advisory`):
+- **Retrieval recall: met.** 0.992 on development queries, 1.0 on held-out queries in two fixture repos (Python and TypeScript). The fixtures are small, so a real-repository check is still wanted.
+- **Audit trail: met.** Every recommendation, rerank and advice read is in `advisory_decision` with inputs, reasons and outcome; `arbiter advice --history` shows it.
+- **Dangerous misses: met on development data only.**
+  - 0 of 161 development cases.
+  - Held-out sets on their single runs: 20%, 7.5%, 22.5%. No high-risk change was rated low; every miss was rated medium, which still gets a normal review.
+  - Closing this needs real, independently labeled diffs and a diff-risk sensor family (§13.2 semantic features). Diff risk stays shadow-only meanwhile.
+- **Scheduler and Host Advisory API v0** in shadow: never outside the allowed set, deadlines and errors abstain, outcomes confined per project.
 
 ## M10 — Tool gateway + bounded retrieval automation
 Stage 6 · Build steps 27–28 · Tier T1

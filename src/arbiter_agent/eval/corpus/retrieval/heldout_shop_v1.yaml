@@ -1,0 +1,26 @@
+# Held-out retrieval queries, v1 (2026-09-25), on the "shop" fixture, written after retrieval was
+# developed on queries.yaml. FROZEN: never tune retrieval against it.
+version: 1
+repo: shop
+queries:
+  - {id: s01, query: "users can log in with any email casing", gold: [shop/users/auth.py]}
+  - {id: s02, query: "orders are saved before the payment succeeds", gold: [shop/checkout/checkout.py]}
+  - {id: s03, query: "sqlite connection is never closed", gold: [shop/db/session.py]}
+  - {id: s04, query: "refunds don't give the money back to the card", gold: [shop/payments/refunds.py, shop/payments/gateway.py]}
+  - {id: s05, query: "rounding errors in the subtotal", gold: [shop/pricing/totals.py, shop/pricing/discounts.py]}
+  - {id: s06, query: "the webhook secret is hard-coded", gold: [shop/payments/gateway.py]}
+  - {id: s07, query: "search endpoint returns only SKUs", gold: [shop/api/handlers.py, shop/catalog/products.py]}
+  - {id: s08, query: "add a quantity limit per cart line", gold: [shop/cart/cart.py]}
+  - id: s09
+    query: "why does this fail"
+    errors: |
+      Traceback (most recent call last):
+        File "shop/app.py", line 9, in create_app
+          app["db"] = open_session(settings["database_url"])
+        File "shop/config.py", line 9, in load_settings
+          settings["database_url"] = os.environ["SHOP_DATABASE_URL"]
+      KeyError: 'SHOP_DATABASE_URL'
+    gold: [shop/config.py, shop/app.py]
+  - {id: s10, query: "profile updates don't check the email is unique", gold: [shop/users/profile.py]}
+  - {id: s11, query: "logging configuration for outgoing mail", gold: [shop/notify/email.py]}
+  - {id: s12, query: "inventory test doesn't use a session", gold: [tests/test_inventory.py, shop/catalog/inventory.py]}

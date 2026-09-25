@@ -145,6 +145,25 @@ TOOLS += [
             "control": {"type": "string"}, **_SESSION}},
     },
 ]
+TOOLS += [
+    {
+        "name": "arbiter_context",
+        "description": "Which files to read for a task, before you start: files referenced by the error, files "
+                       "you named or changed, definitions of named symbols (pinned), then the most relevant files "
+                       "ranked across full-text, path, symbol and import-graph signals. Pass the task, and the error "
+                       "text if there is one.",
+        "inputSchema": {"type": "object", "properties": {
+            "task": {"type": "string"}, "errors": {"type": "string", "description": "Error or stack trace text."},
+            "paths": {"type": "array", "items": {"type": "string"}}, **_SESSION}, "required": ["task"]},
+    },
+    {
+        "name": "arbiter_advice",
+        "description": "Arbiter's advisory read of this session: suggested reasoning effort with reasons, whether "
+                       "to broaden retrieval or replan (loops, no progress, retrieval misses), and the risk level of "
+                       "the current diff with its suggested review and test order. Advisory only.",
+        "inputSchema": {"type": "object", "properties": {**_SESSION}},
+    },
+]
 RETRIEVAL_TOOLS = {"arbiter_search": "search", "arbiter_symbol": "symbol", "arbiter_related": "related"}
 TASK_TOOLS = {"arbiter_contract_propose": "contract_propose", "arbiter_contracts": "session_status",
               "arbiter_scope_change": "scope_change", "arbiter_finish_check": "finish_check"}
@@ -207,10 +226,16 @@ class MCPShim:
                 record_failopen(self.paths.logs, "mcp_shim", exc.reason)
                 trigger_launch(self.paths)
                 return self._text(f"Arbiter daemon unavailable ({exc.reason}); starting it in the background.")
-        if name in TASK_TOOLS or name in ("arbiter_verify", "arbiter_controls"):
+        if name in TASK_TOOLS or name in ("arbiter_verify", "arbiter_controls", "arbiter_advice"):
             return self._task_tool(name, args)
         if name in RETRIEVAL_TOOLS:
             return self._retrieval_tool(name, args)
+        if name == "arbiter_context":
+            return self._retrieval_tool(name, {**args, "context": {"query": args.get("task") or "",
+                                                                    "errors": args.get("errors") or "",
+                                                                    "paths": args.get("paths") or []}})
+        if name == "arbiter_advice":
+            return self._task_tool(name, args)
         raise KeyError(name)
 
     def _binding(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +254,8 @@ class MCPShim:
                 self._client = c
             if name == "arbiter_verify":
                 return self._text(self._verify(c, params))
+            if name == "arbiter_advice":
+                return self._text(render_advice(c.request("advice", params, timeout=20.0)))
             if name == "arbiter_controls":
                 if args.get("action") == "request":
                     res = c.request("control_set", {**params, "key": str(args.get("control") or ""), "value": True,
@@ -252,7 +279,7 @@ class MCPShim:
             return self._text(f"Arbiter: {exc}", is_error=True)
 
     def _retrieval_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        params = {**args, **self._binding(args), "op": RETRIEVAL_TOOLS[name]}
+        params = {**args, **self._binding(args), "op": RETRIEVAL_TOOLS.get(name, "context")}
         try:
             with self._lock:
                 c = self._client or DaemonClient(self.paths, component="mcp_shim")
@@ -357,6 +384,26 @@ class MCPShim:
         return 0
 
 
+def render_advice(res: dict[str, Any]) -> str:
+    r = res.get("reasoning") or {}
+    lines = [f"Suggested effort: {r.get('effort')} ({'; '.join(r.get('reasons') or [])})"]
+    lines += [f"- {a}" for a in r.get("advice") or []]
+    sig = res.get("signals") or {}
+    if sig.get("retrieval_miss_reasons"):
+        lines.append("Retrieval misses: " + "; ".join(sig["retrieval_miss_reasons"]))
+    if sig.get("evidence_gaps"):
+        lines.append(f"Evidence gaps: {len(sig['evidence_gaps'])} (see arbiter_contracts)")
+    risk = res.get("diff_risk")
+    if risk:
+        lines.append(risk.get("summary", ""))
+        for f in [f for f in risk.get("files", []) if f["level"] in ("high", "critical")][:6]:
+            lines.append(f"  {f['level'].upper()} {f['path']}: {'; '.join(f['reasons'][:2])}")
+        if risk.get("test_order"):
+            lines.append("Suggested test order: " + ", ".join(risk["test_order"][:6]))
+    lines.append("(advisory only; Arbiter doesn't change your model or effort)")
+    return "\n".join(lines)
+
+
 def render_controls(res: dict[str, Any]) -> str:
     lines = [f"controller: {'on' if res.get('controller') else 'OFF'}   "
              f"load shedding level: {res.get('shedding', {}).get('level', 0)}"]
@@ -371,6 +418,16 @@ def render_controls(res: dict[str, Any]) -> str:
 
 
 def render_retrieval(name: str, res: Any) -> str:
+    if name == "arbiter_context":
+        out = [f"Pinned ({len(res.get('pins', []))}):"]
+        out += [f"  {p['path']}:{p.get('line', 1)}  ({p['reason']})" for p in res.get("pins", [])]
+        k = int(res.get("k") or 0)
+        out.append(f"Ranked (top {k}; {'; '.join(res.get('reasons') or [])}):")
+        out += [f"  {r['path']}:{r.get('line', 1)}  [{', '.join(r.get('channels', []))}]"
+                for r in res.get("ranked", [])[:k]]
+        if res.get("note"):
+            out.append(res["note"])
+        return "\n".join(out)
     if not isinstance(res, dict):
         return json.dumps(res)
     idx = res.get("index") or {}

@@ -134,12 +134,19 @@ class Daemon:
                 self.engine.shedder.sources["semif"] = lambda: (sensor.queue.backlog, sensor.queue.capacity)
                 self.engine.decision_listeners.append(self.shadow.on_decision)
         self.retrieval = None
+        self.host_api = None
         if self.flags.enabled("repo_index"):
             from arbiter_agent.retrieval.service import RetrievalService
 
             self.retrieval = RetrievalService(self.paths.data, self.key, self.config,
                                               redaction_enabled=self.flags.enabled("redaction"))
             self.engine.cwd_listeners.append(lambda sid, cwd: self.retrieval.warm(cwd) if self.retrieval else None)
+            self.engine.graph_provider = self._graph_for
+        if self.flags.enabled("host_api") and self.config.get("hosts.enabled", True):
+            from arbiter_agent.host.api import HostAPI
+
+            self.host_api = HostAPI(self.writer, self.paths.db, config=self.config, engine=self.engine,
+                                    retrieval=self.retrieval, sensor=self.sensor, board=self.board)
         self.ipc_token = rotate_token(self.paths.token_file)  # shim tokens rotate on every start
         self.endpoint = ipc.listen(self.paths.pipe_address, prefer=str(self.config.get("daemon.ipc", "auto")))
         if self.flags.enabled("http_hooks"):
@@ -294,6 +301,10 @@ class Daemon:
             return self.engine_call(method, params)
         if method == "retrieve":
             return self.retrieve(params)
+        if method.startswith("host."):
+            return self.host_call(method[5:], params, component)
+        if method in ("advice", "advice_list"):
+            return self.advice(method, params)
         if method in ("control_list", "control_set", "control_clear", "breaker_reset"):
             return self.control(method, params, component)
         if method == "sensor_status":
@@ -333,6 +344,49 @@ class Daemon:
                 "modules": self.flags.snapshot(), "shedding": self.engine.shedder.snapshot(),
                 "budgets": self.engine.budgets.snapshot()}
 
+    # ------------------------------------------------------------------ advisory (M9)
+    def _graph_for(self, root: str) -> tuple[list[str], dict[str, set[str]]]:
+        assert self.retrieval is not None
+        ident, idx, _, _ = self.retrieval.prepare(root, budget_s=1.0)
+        _, rev = idx.graph(ident.root)
+        return idx.files(ident.root), rev
+
+    def host_call(self, op: str, params: dict[str, Any], component: str | None) -> Any:
+        if self.host_api is None:
+            raise RuntimeError("the Host Advisory API is disabled (hosts.enabled / feature flag host_api)")
+        host = str(params.get("host") or component or "unknown")[:60]
+        api = self.host_api
+        if op == "capabilities":
+            return api.capabilities()
+        if op == "recommend_call":
+            return api.recommend_call(params, host)
+        if op == "rerank_candidates":
+            return api.rerank_candidates(params, host)
+        if op == "session_signals":
+            return api.session_signals(params)
+        if op == "report_outcome":
+            return api.report_outcome(params, host)
+        raise ValueError(f"unknown host operation '{op}'")
+
+    def advice(self, method: str, params: dict[str, Any]) -> Any:
+        from arbiter_agent.host.api import list_decisions, log_decision, partition_key
+
+        if method == "advice_list":
+            sid = self.engine.resolve_session(params) if params.get("session_id") else None
+            return {"decisions": list_decisions(self.paths.db, limit=int(params.get("limit") or 20),
+                                                session_id=sid, kind=params.get("kind"))}
+        if not self.flags.enabled("reasoning_advisor"):
+            raise RuntimeError("the reasoning advisor is disabled (feature flag reasoning_advisor)")
+        sid = str(self._session(params))
+        out = self.engine.advice(sid)
+        root = self.engine.session_cwd(sid)
+        risk = out.get("diff_risk") or {}
+        summary = f"effort {out['reasoning']['effort']}" + (f"; {risk.get('summary')}" if risk else "")
+        out["decision_id"] = log_decision(self.writer, "session_advice", None,
+                                          partition_key({"path": root} if root else None), sid, {}, out, summary,
+                                          mode="advisory")
+        return out
+
     # ------------------------------------------------------------------ retrieval (M6)
     def retrieve(self, params: dict[str, Any]) -> Any:
         if self.retrieval is None:
@@ -352,12 +406,24 @@ class Daemon:
         if op == "search":
             out = r.search(cwd, str(params.get("query") or ""), int(params.get("limit") or 20), params.get("path_glob"))
             n = len(out.get("hits", []))
+            if sid:
+                self.engine.misses.surfaced(sid, [h["path"] for h in out.get("hits", [])], str(params.get("query")))
         elif op == "symbol":
             out = r.symbol(cwd, str(params.get("name") or ""), int(params.get("limit") or 30))
             n = len(out.get("definitions", [])) + len(out.get("references", []))
         elif op == "related":
             out = r.related(cwd, str(params.get("path") or ""))
             n = len(out.get("imports", [])) + len(out.get("importers", [])) + len(out.get("tests", []))
+        elif op == "context":
+            if not self.flags.enabled("retrieval_reranker"):
+                raise RuntimeError("context retrieval is disabled (feature flag retrieval_reranker)")
+            ctx = dict(params.get("context") or {"query": params.get("query") or ""})
+            if sid:
+                ctx.setdefault("misses", len(self.engine.misses.recent(sid)))
+            out = r.context(cwd, ctx)
+            n = len(out.get("selected", []))
+            if sid:
+                self.engine.misses.surfaced(sid, list(out.get("selected", [])), str(ctx.get("query") or ""))
         elif op == "status":
             return r.status(cwd)
         elif op == "gc":

@@ -1,0 +1,213 @@
+# Diff-risk corpus (M9.3 exit: dangerous misses <= 1% of tasks). Each case is one task's diff with
+# the minimum review level a careful reviewer would require. A dangerous miss is a case labeled
+# high/critical that the analysis rates below high. Over-flagging (labeled low, rated high+) is
+# reported but isn't a gate. Written by the assistant that wrote the classifier; extend it with
+# real diffs whenever possible.
+version: 1
+cases:
+  - id: auth-check-removed
+    min_level: critical
+    files:
+      - {path: app/auth/views.py, removed: ["    if not user.check_password(password):", "        raise PermissionDenied()"], added: ["    pass"]}
+  - id: drop-table-migration
+    min_level: critical
+    files:
+      - {path: migrations/0042_cleanup.py, status: A, added: ["    op.drop_table('invoices')"]}
+  - id: delete-from-sql
+    min_level: critical
+    files:
+      - {path: db/cleanup.sql, added: ["DELETE FROM sessions WHERE created_at < now() - interval '30 days';"]}
+  - id: deploy-workflow
+    min_level: critical
+    files:
+      - {path: .github/workflows/deploy.yml, added: ["      - run: ./scripts/deploy.sh production"]}
+  - id: terraform-change
+    min_level: critical
+    files:
+      - {path: infra/main.tf, added: ["  instance_type = \"m5.large\""], removed: ["  instance_type = \"t3.medium\""]}
+  - id: jwt-verify-disabled
+    min_level: high
+    files:
+      - {path: api/middleware.py, added: ["    payload = jwt.decode(token, options={'verify_signature': False})"], removed: ["    payload = jwt.decode(token, KEY, algorithms=['HS256'])"]}
+  - id: tls-verify-off
+    min_level: high
+    files:
+      - {path: services/client.py, added: ["    resp = requests.get(url, verify=False)"], removed: ["    resp = requests.get(url)"]}
+  - id: shell-true
+    min_level: high
+    files:
+      - {path: tools/runner.py, added: ["    subprocess.run(cmd, shell=True)"], removed: ["    subprocess.run(shlex.split(cmd))"]}
+  - id: add-column-migration
+    min_level: high
+    files:
+      - {path: alembic/versions/7c1_add_email.py, status: A, added: ["    op.add_column('users', sa.Column('email', sa.String(255)))"]}
+  - id: create-table-sql
+    min_level: high
+    files:
+      - {path: schema/tables.sql, added: ["CREATE TABLE audit_log (id SERIAL PRIMARY KEY, event TEXT);"]}
+  - id: proto-field-renumber
+    min_level: high
+    files:
+      - {path: proto/orders.proto, added: ["  string customer_id = 3;"], removed: ["  string customer_id = 2;"]}
+  - id: public-function-removed
+    min_level: high
+    files:
+      - {path: mylib/parser.py, removed: ["def parse_header(raw):", "    return raw.split(':')"]}
+  - id: package-init-exports
+    min_level: high
+    files:
+      - {path: mylib/__init__.py, added: ["from .core import Engine, run"], removed: ["from .core import Engine"]}
+  - id: openapi-change
+    min_level: high
+    files:
+      - {path: docs/openapi.yaml, added: ["        - name: page_size", "          required: true"]}
+  - id: conftest-change
+    min_level: high
+    files:
+      - {path: tests/conftest.py, added: ["collect_ignore = ['test_payments.py']"]}
+  - id: test-assert-removed
+    min_level: high
+    files:
+      - {path: tests/test_billing.py, removed: ["    assert total == 120", "    assert invoice.paid"], added: ["    total = compute()"]}
+  - id: snapshot-rewrite
+    min_level: high
+    files:
+      - {path: web/__snapshots__/Header.test.tsx.snap, added: ["exports[`Header renders 1`] = `<div>new</div>`;"], removed: ["exports[`Header renders 1`] = `<div>old</div>`;"]}
+  - id: rmtree-added
+    min_level: high
+    files:
+      - {path: scripts/cleanup.py, added: ["    shutil.rmtree(build_dir)"]}
+  - id: file-deleted
+    min_level: high
+    files:
+      - {path: app/billing/refunds.py, status: D, removed: ["def refund(order):", "    ..."]}
+  - id: password-hashing-change
+    min_level: high
+    files:
+      - {path: accounts/utils.py, added: ["    return hashlib.md5(pw.encode()).hexdigest()"], removed: ["    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt())"]}
+  - id: permission-decorator-removed
+    min_level: high
+    files:
+      - {path: dashboard/views.py, removed: ["@login_required"], added: []}
+  - id: eval-added
+    min_level: high
+    files:
+      - {path: calc/engine.py, added: ["    return eval(expression)"], removed: ["    return safe_eval(expression)"]}
+  - id: pickle-loads
+    min_level: high
+    files:
+      - {path: cache/store.py, added: ["    return pickle.loads(blob)"], removed: ["    return json.loads(blob)"]}
+  - id: api-route-file
+    min_level: high
+    files:
+      - {path: server/api/routes.ts, added: ["router.delete('/users/:id', deleteUser);"]}
+  - id: session-module
+    min_level: high
+    files:
+      - {path: web/session.py, added: ["SESSION_COOKIE_SECURE = False"], removed: ["SESSION_COOKIE_SECURE = True"]}
+  - id: models-change
+    min_level: high
+    files:
+      - {path: shop/models.py, added: ["    price = models.DecimalField(max_digits=8, decimal_places=2)"], removed: ["    price = models.FloatField()"]}
+  - id: threading-lock
+    min_level: medium
+    files:
+      - {path: worker/queue.py, added: ["        with self._lock:", "            self.items.append(x)"]}
+  - id: async-refactor
+    min_level: medium
+    files:
+      - {path: net/fetch.py, added: ["async def fetch(url):", "    return await session.get(url)"], removed: ["def fetch(url):", "    return session.get(url)"]}
+  - id: exception-handling
+    min_level: medium
+    files:
+      - {path: core/loader.py, added: ["    except FileNotFoundError:", "        return None"]}
+  - id: dependency-bump
+    min_level: medium
+    files:
+      - {path: pyproject.toml, added: ["    \"requests>=2.32\","], removed: ["    \"requests>=2.28\","]}
+  - id: dockerfile
+    min_level: medium
+    files:
+      - {path: Dockerfile, added: ["FROM python:3.12-slim"], removed: ["FROM python:3.11-slim"]}
+  - id: settings-change
+    min_level: medium
+    files:
+      - {path: app/settings.py, added: ["CACHE_TTL = 600"], removed: ["CACHE_TTL = 300"]}
+  - id: plain-logic
+    min_level: medium
+    files:
+      - {path: src/pricing.py, added: ["    return base * 1.2"], removed: ["    return base * 1.15"]}
+  - id: generated-pb2
+    min_level: medium
+    files:
+      - {path: gen/orders_pb2.py, added: ["_ORDER = descriptor.Descriptor(...)"]}
+  - id: readme-typo
+    min_level: low
+    files:
+      - {path: README.md, added: ["Install with uv."], removed: ["Instal with uv."]}
+  - id: docs-page
+    min_level: low
+    files:
+      - {path: docs/guide/usage.md, added: ["## Advanced usage", "Use --verbose for more output."]}
+  - id: comment-only
+    min_level: low
+    files:
+      - {path: src/utils.py, added: ["# Normalizes whitespace before comparison."], removed: ["# normalize ws"]}
+  - id: new-test
+    min_level: low
+    files:
+      - {path: tests/test_utils.py, added: ["def test_strip():", "    assert strip(' a ') == 'a'"]}
+  - id: changelog
+    min_level: low
+    files:
+      - {path: CHANGELOG.md, added: ["- Fixed the date parser."]}
+  - id: ts-comment
+    min_level: low
+    files:
+      - {path: web/src/util.ts, added: ["// TODO: memoize"]}
+  - id: auth-docs
+    min_level: low
+    files:
+      - {path: docs/auth.md, added: ["Tokens expire after one hour."]}
+  - id: mixed-docs-and-migration
+    min_level: critical
+    files:
+      - {path: README.md, added: ["Run migrations first."]}
+      - {path: migrations/0050_drop_legacy.sql, status: A, added: ["DROP TABLE legacy_orders;"]}
+  - id: mixed-test-and-security
+    min_level: high
+    files:
+      - {path: tests/test_login.py, added: ["def test_login_ok():", "    assert login('a', 'b')"]}
+      - {path: app/security/tokens.py, added: ["    TOKEN_TTL = 86400"], removed: ["    TOKEN_TTL = 3600"]}
+  - id: k8s-manifest
+    min_level: critical
+    files:
+      - {path: k8s/deployment.yaml, added: ["  replicas: 1"], removed: ["  replicas: 3"]}
+  - id: gitlab-ci
+    min_level: critical
+    files:
+      - {path: .gitlab-ci.yml, added: ["  script: make release"]}
+  - id: csrf-exempt
+    min_level: high
+    files:
+      - {path: payments/views.py, added: ["@csrf_exempt"]}
+  - id: truncate-in-code
+    min_level: high
+    files:
+      - {path: jobs/reset.py, added: ["    cursor.execute('TRUNCATE events')"]}
+  - id: env-example
+    min_level: medium
+    files:
+      - {path: .env.example, added: ["FEATURE_X=1"]}
+  - id: lockfile-only
+    min_level: medium
+    files:
+      - {path: uv.lock, added: ["version = \"2.32.3\""], removed: ["version = \"2.28.0\""]}
+  - id: rust-unwrap
+    min_level: medium
+    files:
+      - {path: src/io.rs, added: ["    let f = File::open(p).unwrap();"], removed: ["    let f = File::open(p)?;"]}
+  - id: go-goroutine
+    min_level: medium
+    files:
+      - {path: pkg/server/serve.go, added: ["    go func() { handle(conn) }()"]}

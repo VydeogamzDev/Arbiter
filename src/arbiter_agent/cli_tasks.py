@@ -286,6 +286,42 @@ def cmd_breakers(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_advice(a: argparse.Namespace) -> int:
+    from arbiter_agent.shims.mcp_server import render_advice
+
+    b = _bind(a)
+    if a.history:
+        res = _call("advice_list", {**b, "limit": a.limit, "session_id": getattr(a, "session", None),
+                                    "kind": a.kind}, timeout=20)
+        if a.json:
+            print(json.dumps(res, indent=1))
+            return 0
+        import time as _t
+
+        for d in res["decisions"]:
+            when = _t.strftime("%Y-%m-%d %H:%M", _t.localtime(d["created_at"]))
+            print(f"{when}  {d['kind']:<15} {d['mode']:<8} {d['summary']}"
+                  + (f"  -> outcome {d['outcome']}" if d.get("outcome") else ""))
+            for r in d.get("reasons", [])[:3]:
+                print(f"      - {r}")
+        if not res["decisions"]:
+            print("no advisory decisions recorded yet")
+        return 0
+    res = _call("advice", b, timeout=30)
+    print(json.dumps(res, indent=1, default=str) if a.json else render_advice(res))
+    return 0
+
+
+def cmd_context(a: argparse.Namespace) -> int:
+    from arbiter_agent.shims.mcp_server import render_retrieval
+
+    errors = Path(a.errors).read_text(encoding="utf-8", errors="replace") if a.errors else ""
+    res = _call("retrieve", {**_bind(a), "op": "context",
+                             "context": {"query": a.task, "errors": errors, "paths": a.paths or []}}, timeout=60)
+    print(json.dumps(res, indent=1) if a.json else render_retrieval("arbiter_context", res))
+    return 0
+
+
 def cmd_semif(a: argparse.Namespace) -> int:
     from arbiter_agent.config import load_config
     from arbiter_agent.paths import get_paths
@@ -371,6 +407,26 @@ def _write_semif_config(paths: Any, update: dict[str, Any]) -> None:
 def cmd_eval(a: argparse.Namespace) -> int:
     from arbiter_agent.eval import gates
 
+    if a.advisory:
+        from arbiter_agent.eval import diff_gate, retrieval_gate
+
+        corpus = diff_gate.CORPUS.parent
+        rep = {"diff_risk": {f: {k: v for k, v in diff_gate.run(corpus / f).items() if k != "detail"}
+                             for f in ("diffs.yaml", "diffs_dev2.yaml", "diffs_dev3.yaml", "diffs_dev4.yaml")},
+               "retrieval": {q: {k: v for k, v in retrieval_gate.run(queries=q).items() if k != "detail"}
+                             for q in ("queries.yaml", "heldout_shop_v1.yaml", "heldout_notes_v1.yaml")}}
+        ok = all(r["passed"] for r in rep["diff_risk"].values()) and all(r["passed"] for r in rep["retrieval"].values())
+        if a.json:
+            print(json.dumps({**rep, "passed": ok}, indent=1))
+        else:
+            for f, r in rep["diff_risk"].items():
+                print(f"diff risk {f:<18} dangerous misses {r['dangerous_miss_rate']:.1%}  exact level "
+                      f"{r['exact_level_rate']:.0%}  ({r['cases']} cases)")
+            for q, r in rep["retrieval"].items():
+                print(f"retrieval {q:<24} recall {r['recall']:.3f}  avg files {r['avg_selected']}  "
+                      f"({r['queries']} queries)")
+            print("PASS" if ok else "FAIL")
+        return 0 if ok else 4
     if a.faults:
         from arbiter_agent.eval import fault_injection
 
@@ -442,6 +498,22 @@ def add_parsers(sub: Any) -> None:
     session_args(s)
     s.set_defaults(fn=cmd_index)
 
+    s = sub.add_parser("advice", help="advisory read of this session: effort, retrieval, diff risk (M9)")
+    session_args(s)
+    s.add_argument("--history", action="store_true", help="list recorded advisory decisions (the audit trail)")
+    s.add_argument("--limit", type=int, default=20)
+    s.add_argument("--kind", choices=["recommend_call", "rerank", "session_advice"])
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_advice)
+
+    s = sub.add_parser("context", help="which files to read for a task (pins + ranked, adaptive top-k)")
+    s.add_argument("task")
+    s.add_argument("--errors", help="file containing an error or stack trace")
+    s.add_argument("--paths", nargs="*")
+    session_args(s)
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_context)
+
     s = sub.add_parser("control", help="manual controls: modules, controller on/off (spec 24)")
     s.add_argument("action", nargs="?", choices=["list", "module", "controller", "clear"])
     s.add_argument("target", nargs="?", help="module name, on|off, or the key to clear")
@@ -475,5 +547,6 @@ def add_parsers(sub: Any) -> None:
     s = sub.add_parser("eval", help="run the evaluation corpus and the numeric gates (spec 20.17)")
     s.add_argument("--corpus", help="corpus directory (default: the packaged corpus)")
     s.add_argument("--faults", action="store_true", help="run the circuit-breaker fault-injection suite instead")
+    s.add_argument("--advisory", action="store_true", help="run the M9 diff-risk and retrieval gates instead")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_eval)
