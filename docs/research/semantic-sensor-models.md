@@ -92,11 +92,11 @@ Artificial Analysis's 25.8 tok/s figure for Qwen3.5 4B is an API provider's gene
 
 ## Tier 0 speed and footprint
 
-These are *estimates* for a 340M encoder (DeBERTa-v3-large-class).
+These started as *estimates* for a 340M encoder (DeBERTa-v3-large-class); the CPU row is now measured (decision 0031).
 
 | Where it runs | Footprint | Short decision (≤ 256 tokens) |
 | --- | --- | --- |
-| Modern desktop CPU | ~2 GB RAM (the published weights are FP32, 1.95 GB; FP16/INT8 ONNX: less) | ~20–60 ms |
+| Modern desktop CPU | *measured:* 2.4 GB (PyTorch FP32), 1.08 GB (ONNX `w8e4`) | *measured:* ~256 ms per judgment with ONNX `w8e4`, both option orders in one pass (the 20–60 ms estimate was too optimistic) |
 | Any recent NVIDIA GPU | ~1 GB VRAM in FP16 (2 GB FP32) | ~3–10 ms, batches well |
 
 That's far above demand, and it needs no GPU. That's why tier 0 can ship before the decoder backend.
@@ -127,6 +127,12 @@ These are the first real runs of `semif/benchmark.py`: 120 labeled items from th
   - JevK5 is a reasoning model. With a raw prompt it opens `<think>` (letter mass 0), so the backend renders the model's chat template with `enable_thinking: false`.
   - Scores must be pre-sampling: llama.cpp's post-sampling probabilities at temperature 0 are 1.0 for the greedy token.
   - The published GLiNER2.5-Decide weights are FP32 (1.95 GB). They load in about 6–10 s on CPU.
+
+## Tier 0 runtimes and the held-out corpus (2026-09-25)
+
+Full tables and reasoning are in decision [0031](../decisions/0031-tier0-runtimes-and-heldout-corpus.md). In short:
+- **Runtimes:** ONNX `w8e4` (8-bit weights, 4-bit embeddings) makes the same decisions as PyTorch FP32 on 120/120 judgments at 1,078 MB of RAM instead of 2,428 MB, and about 256 ms instead of 421 ms. Dynamic int8 was rejected (scores moved by up to 0.22). On macOS, Fluid Inference's Core ML packages (`FluidInference/gliner2-5-decide-coreml`) run at about 15 ms per call.
+- **Held-out:** on 160 frozen items the rules score 0.55 on claims, 0.56 on scope changes and 0.90 on requirements. Rules plus the encoder reach 0.95 on claims; rules plus JevK5 reach 0.94 on scope changes. Neither model beats the rules on requirements.
 
 ## Quantization and runtimes
 

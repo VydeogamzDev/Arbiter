@@ -9,7 +9,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-encoder = ["gliner2[local]>=2.0,<3"]   # tier 0 sensor (GLiNER2.5-Decide), local inference; pulls PyTorch
+encoder = ["gliner2[local]>=2.0,<3", "onnxruntime>=1.20"]   # tier 0 sensor (GLiNER2.5-Decide); pulls PyTorch
+encoder-export = ["arbiter-agent[encoder]", "onnx>=1.17", "onnxscript>=0.2"]   # arbiter semif export-onnx
+encoder-coreml = ["arbiter-agent[encoder]", "coremltools>=8.0; sys_platform == 'darwin'"]   # macOS tier 0
 
 [project.scripts]
 arbiter = "arbiter_agent.cli:main"
@@ -67,6 +69,9 @@ check_untyped_defs = true
 [[tool.mypy.overrides]]
 # optional sensor stack ([encoder] extra): untyped for our purposes, and never type-checked here
 module = ["gliner2", "gliner2.*", "torch", "torch.*", "transformers", "transformers.*", "numpy", "numpy.*",
-          "peft", "peft.*", "safetensors", "safetensors.*"]
+          "peft", "peft.*", "safetensors", "safetensors.*", "onnx", "onnx.*", "onnxruntime", "onnxruntime.*",
+          "coremltools", "coremltools.*", "psutil", "psutil.*", "ml_dtypes", "ml_dtypes.*", "onnx_ir", "onnx_ir.*",
+          "onnxscript", "onnxscript.*", "tokenizers", "tokenizers.*", "huggingface_hub", "huggingface_hub.*"]
 follow_imports = "skip"
 follow_untyped_imports = false
+follow_imports_for_stubs = true

@@ -68,43 +68,53 @@ class EncoderBackend:
         except Exception:
             return None
 
-    def _classify(self, text: str, options: list[str], criterion: str) -> tuple[list[float], bool]:
-        schema = {"answer": {"labels": list(options), "prompt": criterion}}
-        try:
-            out = self._model.classify_text(text, schema, include_confidence=True)
-        except TypeError:
-            out = self._model.classify_text(text, schema)
-        val = out.get("answer") if isinstance(out, dict) else None
+    @staticmethod
+    def _parse(val: Any, options: list[str]) -> tuple[list[float], bool]:
         if isinstance(val, dict) and "label" in val:
             label, conf = str(val["label"]), float(val.get("confidence", 1.0))
             if label not in options or not 0 <= conf <= 1:
                 raise ValueError(f"unexpected encoder output {val!r}")
-            rest = (1.0 - conf) / max(1, len(options) - 1)
+            rest = (1.0 - conf) / max(1, len(options) - 1)       # exact for binary questions
             return [conf if o == label else rest for o in options], False
         if isinstance(val, str) and val in options:
             return [1.0 if o == val else 0.0 for o in options], True
-        raise ValueError(f"unexpected encoder output {out!r}")
+        raise ValueError(f"unexpected encoder output {val!r}")
+
+    def _classify_heads(self, text: str, reqs: list[ScoreRequest]) -> list[tuple[list[float], bool]]:
+        """All requests on the same text as heads of one encoder pass (both mirror orders at once)."""
+        from arbiter_agent.semif import gliner_inputs as gi
+
+        tasks = gi.tasks_for([(r.options, r.criterion) for r in reqs])
+        try:
+            out = self._model.classify_text(text, tasks, include_confidence=True)
+        except TypeError:
+            out = self._model.classify_text(text, tasks)
+        if not isinstance(out, dict):
+            raise ValueError(f"unexpected encoder output {out!r}")
+        return [self._parse(out.get(name), r.options) for name, r in zip(tasks, reqs, strict=True)]
 
     def score(self, requests: list[ScoreRequest], deadline: Deadline) -> list[ScoreResult]:
-        out: list[ScoreResult] = []
-        for r in requests:
+        from arbiter_agent.semif.backends.encoder_onnx import group_by_state
+
+        results: list[ScoreResult | None] = [None] * len(requests)
+        for state, idxs in group_by_state(requests).items():
+            reqs = [requests[i] for i in idxs]
             t0 = time.perf_counter()
-            if deadline.expired():
-                out.append(ScoreResult(r.options, [], self.model, self.revision, self.name, self.precision,
-                                       TEMPLATE_VERSION, self.tokenizer, r.state_hash, r.criterion_hash, 0.0,
-                                       abstain=True, reason="deadline"))
-                continue
-            try:
-                probs, hard = self._classify(r.state_text, r.options, r.criterion)
-                out.append(ScoreResult(list(r.options), probs, self.model, self.revision, self.name, self.precision,
-                                       TEMPLATE_VERSION, self.tokenizer, r.state_hash, r.criterion_hash,
-                                       (time.perf_counter() - t0) * 1000, hard_label=hard))
-            except Exception as exc:
-                out.append(ScoreResult(list(r.options), [], self.model, self.revision, self.name, self.precision,
-                                       TEMPLATE_VERSION, self.tokenizer, r.state_hash, r.criterion_hash,
-                                       (time.perf_counter() - t0) * 1000, abstain=True,
-                                       reason=f"encoder error: {exc}"[:200]))
-        return out
+            scored: list[tuple[list[float], bool] | None] = [None] * len(reqs)
+            reason = "deadline"
+            if not deadline.expired():
+                try:
+                    scored = list(self._classify_heads(state, reqs))
+                    reason = ""
+                except Exception as exc:
+                    reason = f"encoder error: {exc}"[:200]
+            ms = (time.perf_counter() - t0) * 1000 / max(1, len(reqs))
+            for i, r, sc in zip(idxs, reqs, scored, strict=True):
+                results[i] = ScoreResult(list(r.options), sc[0] if sc else [], self.model, self.revision, self.name,
+                                         self.precision, TEMPLATE_VERSION, self.tokenizer, r.state_hash,
+                                         r.criterion_hash, ms, hard_label=bool(sc and sc[1]), abstain=sc is None,
+                                         reason=reason)
+        return [r for r in results if r is not None]
 
     def health(self) -> dict[str, Any]:
         return {"backend": self.name, "ok": True, "model": self.model, "revision": self.revision,

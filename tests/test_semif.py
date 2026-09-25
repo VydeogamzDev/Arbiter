@@ -217,22 +217,25 @@ def test_queue_sheds_and_never_blocks():
 
 
 def test_encoder_routing_and_fake_model():
+    calls: list[list[str]] = []
+
     class Model:
-        def classify_text(self, text: str, schema: dict[str, Any], include_confidence: bool = False) -> Any:
-            labels = schema["answer"]["labels"]
-            return {"answer": {"label": "yes" if "done" in text.lower() else "no", "confidence": 0.9}} \
-                if "yes" in labels else {}
+        def classify_text(self, text: str, tasks: dict[str, Any], include_confidence: bool = False) -> Any:
+            calls.append(list(tasks))
+            label = "yes" if "done" in text.lower() else "no"
+            return {name: {"label": label, "confidence": 0.9} for name in tasks}
 
     enc = EncoderBackend(model=Model(), revision="enc-r1")
     svc = SemIfService(FakeBackend(0.1), enc, encoder_families=["completion_claim"])
     assert svc.backend_for("completion_claim") is enc and svc.backend_for("scope_change").name == "fake"
     j = svc.judge(_q(text="All done."))
-    assert j.choice == "yes" and j.results[0].backend == "encoder"
+    assert j.choice == "yes" and j.results[0].backend == "encoder" and j.variants == 2
+    assert calls == [["q1", "q2"]]                      # both option orders in one encoder pass
     assert svc.judge(_q(text="Still working on it.")).choice == "no"
 
     class HardModel:
-        def classify_text(self, text: str, schema: dict[str, Any]) -> Any:
-            return {"answer": "yes"}
+        def classify_text(self, text: str, tasks: dict[str, Any]) -> Any:
+            return {name: "yes" for name in tasks}
 
     j = SemIfService(None, EncoderBackend(model=HardModel(), revision="x"),
                      encoder_families=["completion_claim"]).judge(_q())
@@ -449,8 +452,8 @@ def test_encoder_loads_local_folder_quietly(tmp_path, monkeypatch, capsys):
         def from_pretrained(path, **kw):
             seen["path"] = path
             print("\U0001f9e0 Model Configuration")      # gliner2's banner: crashes a cp1252 console
-            return types.SimpleNamespace(classify_text=lambda *a, **k: {"answer": {"label": "yes",
-                                                                                    "confidence": 0.9}})
+            return types.SimpleNamespace(classify_text=lambda t, tasks, **k: {
+                n: {"label": "yes", "confidence": 0.9} for n in tasks})
 
     monkeypatch.setitem(sys.modules, "gliner2", types.SimpleNamespace(AutoExtractor=Auto))
     be = EncoderBackend(str(folder), device="cpu")
@@ -458,3 +461,123 @@ def test_encoder_loads_local_folder_quietly(tmp_path, monkeypatch, capsys):
     assert be.model == "GLiNER2.5-Decide" and be.revision.startswith("local:") and be.revision.endswith(":1234")
     (folder / "config.json").write_text('{"model": "y"}', encoding="utf-8")
     assert EncoderBackend(str(folder)).revision != be.revision       # a changed checkpoint changes the revision
+
+
+# ------------------------------------------------------------------ ONNX / Core ML encoder runtimes (stubbed)
+def _stub_heads(monkeypatch, calls: list[Any]):
+    """Replace GLiNER2 preprocessing (not installed in CI) with a deterministic stub."""
+    from arbiter_agent.semif import gliner_inputs as gi
+
+    def build(processor, text, heads):
+        calls.append([lbl for lbl, _ in heads])
+        markers, pos = [], 3
+        for labels, _ in heads:
+            markers.append(list(range(pos, pos + len(labels))))
+            pos += len(labels) + 2
+        return gi.Heads([[1] * (pos + 4)], [[1] * (pos + 4)], markers, [list(lbl) for lbl, _ in heads])
+
+    monkeypatch.setattr(gi, "build", build)
+
+
+def _yes_logits(text: str, labels_per_head: list[list[str]]) -> list[float]:
+    good = "done" in text.lower()
+    return [2.0 if (lbl == "yes") == good else -2.0 for labels in labels_per_head for lbl in labels]
+
+
+def test_onnx_encoder_one_pass_and_manifest(tmp_path, monkeypatch):
+    import json as _json
+
+    pytest.importorskip("numpy")             # [encoder] extra; not in the base install
+
+    from arbiter_agent.semif.backends import encoder_runtime
+    from arbiter_agent.semif.backends.encoder_onnx import OnnxEncoderBackend
+
+    calls: list[Any] = []
+    _stub_heads(monkeypatch, calls)
+    (tmp_path / "arbiter-onnx.json").write_text(_json.dumps({
+        "format": "arbiter-gliner2-cls-onnx", "version": 1, "precision": "w8e4", "file": "model.w8e4.onnx",
+        "sha256": "ab" * 32, "source": "GLiNER2.5-Decide", "token_pooling": "first",
+        "parity": {"max_prob_diff": 0.01}}), encoding="utf-8")
+    runs: list[Any] = []
+
+    class Session:
+        def run(self, names, feed):
+            runs.append({k: list(v.shape) for k, v in feed.items()})
+            return [__import__("numpy").array(_yes_logits(state["text"], calls[-1]))]
+
+    state = {"text": ""}
+    be = OnnxEncoderBackend(tmp_path, session=Session(), processor=object())
+    assert be.revision == "onnx:w8e4:" + "ab" * 6 and be.precision == "w8e4"
+    assert encoder_runtime(str(tmp_path)) == "onnx"
+    svc = SemIfService(None, be, encoder_families=["completion_claim"])
+    state["text"] = "All done."
+    j = svc.judge(_q(text="All done."))
+    assert j.choice == "yes" and not j.abstain and j.variants == 2 and j.spread < 0.01
+    assert len(runs) == 1 and runs[0]["markers"] == [4]          # both option orders, one encoder pass
+    state["text"] = "Still going."
+    assert svc.judge(_q(text="Still going.")).choice == "no"
+
+
+def test_coreml_encoder_buckets_and_padding(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+
+    from arbiter_agent.semif.backends.encoder_coreml import CoreMLEncoderBackend
+
+    calls: list[Any] = []
+    _stub_heads(monkeypatch, calls)
+    for name in ("gliner2_decide_classification_w8_L128_H4_K8.mlpackage",
+                 "gliner2_decide_classification_w8_L512_H4_K32.mlpackage",
+                 "gliner2_decide_classification_fp16_L256_H4_K32.mlpackage"):
+        (tmp_path / name).mkdir()
+    loaded: list[str] = []
+    feeds: list[dict[str, Any]] = []
+
+    class Pkg:
+        def __init__(self, path):
+            loaded.append(path.name)
+
+        def predict(self, feed):
+            feeds.append(feed)
+            logits = np.full(feed["marker_mask"].shape, -1e4, dtype=np.float32)
+            flat = _yes_logits(text["v"], calls[-1])
+            k = 0
+            for j, labels in enumerate(calls[-1]):
+                logits[0, j, :len(labels)] = flat[k:k + len(labels)]
+                k += len(labels)
+            return {"logits": logits}
+
+    text = {"v": "All done."}
+    be = CoreMLEncoderBackend(tmp_path, "w8", processor=type("P", (), {"tokenizer": None})(), loader=Pkg)
+    assert be.max_tokens == 512 and [b[0] for b in be._buckets] == [128, 512]
+    j = SemIfService(None, be, encoder_families=["completion_claim"]).judge(_q(text="All done."))
+    assert j.choice == "yes" and not j.abstain
+    f = feeds[0]
+    assert f["input_ids"].shape == (1, 128) and f["input_ids"].dtype == np.int32       # smallest bucket, padded
+    assert f["marker_indices"].shape == (1, 4, 8) and f["marker_mask"].sum() == 4       # 2 heads x 2 labels
+    assert loaded == ["gliner2_decide_classification_w8_L128_H4_K8.mlpackage"]
+    with pytest.raises(FileNotFoundError):
+        CoreMLEncoderBackend(tmp_path, "lut6", processor=object(), loader=Pkg)
+
+
+def test_heldout_corpus_loads_frozen_and_balanced():
+    from collections import Counter
+
+    its = benchmark.heldout_items()
+    counts = Counter((i["family"], i["label"]) for i in its)
+    assert counts == {("completion_claim", True): 30, ("completion_claim", False): 30,
+                      ("scope_change", True): 25, ("scope_change", False): 25,
+                      ("requirement_detection", True): 25, ("requirement_detection", False): 25}
+    assert all(isinstance(i["rule"], bool) for i in its)
+    head = benchmark.HELDOUT.read_text(encoding="utf-8").splitlines()[0]
+    assert "FROZEN" in head
+
+
+def test_benchmark_cascade_uses_rules_when_sensor_abstains():
+    its = benchmark.heldout_items()
+    null = benchmark.run(SemIfService(), item_list=its)
+    for fam, m in null["families"].items():      # sensor never answers: cascade == rules
+        assert m["cascade_balanced_accuracy"] == m["rules_balanced_accuracy"], fam
+    labels = {question(i["family"], i["sections"]).state_text(): i["label"] for i in its}
+    oracle = benchmark.run(SemIfService(FakeBackend(fn=lambda r: 0.95 if labels[r.state_text] else 0.05)),
+                           item_list=its)
+    assert all(m["cascade_balanced_accuracy"] == 1.0 for m in oracle["families"].values())

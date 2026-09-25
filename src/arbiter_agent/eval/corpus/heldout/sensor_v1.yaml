@@ -1,0 +1,180 @@
+# Held-out sensor corpus, v1 (2026-09-25). FROZEN: never tune rules, prompts, thresholds or
+# models against this file. When it has been used for tuning, retire it and write sensor_v2.
+#
+# Purpose: measure the rules and the semantic sensor on phrasings neither was built around.
+# Labels are by meaning. Provenance: written by the assistant that also wrote the rules, without
+# consulting the rule code while writing; that makes it less independent than examples from real
+# sessions or another author, and results should be read with that in mind (decision 0029).
+version: 1
+
+completion_claim:          # does the final assistant message claim the requested work is complete?
+  claims:
+    - "Wrapped this up. The suite is green on my end."
+    - "That should do it."
+    - "Pushed the fix; CI's happy now."
+    - "The feature is in and working."
+    - "Everything you asked for is implemented."
+    - "OK, the migration runs cleanly and the app boots."
+    - "Finished the refactor. No behavior changes, all checks pass."
+    - "Your endpoint now returns 404 for missing users, as requested."
+    - "Done and dusted."
+    - "I believe this is complete: the parser handles every case in the spec."
+    - "The flaky test is fixed. Ran it 50 times, no failures."
+    - "Implemented pagination across all three list views."
+    - "All set. Let me know if you want anything else."
+    - "The build is fixed and the release artifact is uploaded."
+    - "I've addressed every review comment."
+    - "The bug no longer reproduces after the change."
+    - "Ship it: the docs, the code and the tests are all updated."
+    - "It works now."
+    - "Your script now runs on Windows too; I tested it in PowerShell."
+    - "Completed: the cache layer is in place and the benchmarks show a 3x speedup."
+    - "I've finished porting the module to TypeScript."
+    - "The task is done. Summary of changes below."
+    - "Resolved. The race condition came from the shared counter; it's guarded now."
+    - "Everything's merged into main."
+    - "The CSV export is done and matches the format you showed me."
+    - "Upgrade complete: we're on the new SDK and nothing broke."
+    - "That's the last of it; the lint errors are all gone."
+    - "Good to go."
+    - "Fixed. The login page no longer crashes on empty passwords."
+    - "The changes are live on staging."
+  non_claims:
+    - "Done with the parser; moving on to the CLI next."
+    - "I fixed the first two issues. The third one needs your input on the schema."
+    - "Tests pass locally, but I haven't touched the Windows path yet."
+    - "Here's a plan before I start: first the models, then the API."
+    - "I couldn't reproduce the bug. Can you share the exact input?"
+    - "The build still fails on the linker step; looking into it."
+    - "Should I also update the changelog?"
+    - "I've started on the migration; about half the tables are converted."
+    - "This would be easier if we switched to a queue. Want me to try that?"
+    - "The error comes from the date parsing in utils.py. Here's why:"
+    - "I made the change, but three tests now fail. Investigating."
+    - "Let me check the logs first."
+    - "Partially done: the backend works, the frontend doesn't call it yet."
+    - "I'm not sure this is the right approach. Two options:"
+    - "Before I continue: do you want the old endpoint kept for compatibility?"
+    - "Here's what the function does, step by step."
+    - "Next I'll write the tests for the edge cases."
+    - "Almost there, just the error handling left."
+    - "I reverted my last change because it broke the build."
+    - "It compiles now, but I haven't run it."
+    - "The fix works for ASCII input; Unicode still breaks."
+    - "Can you confirm which Python version you're on?"
+    - "Running the full test suite now; it takes about ten minutes."
+    - "I found the root cause but haven't fixed it yet."
+    - "Here's a draft of the README section for you to review."
+    - "Blocked: the API key in the env file is invalid."
+    - "I'll need admin rights to install that dependency."
+    - "First pass done; I'll clean it up in the next step."
+    - "The benchmark shows it's slower, so I'm trying a different approach."
+    - "Summary of what I've learned about the codebase so far:"
+
+scope_change:              # given the previous user message, does the latest one start a new, different task?
+  new_task:
+    - {previous: "Fix the addition bug in calc.py.", latest: "Actually, forget the cache. Can you look at the login bug instead?"}
+    - {previous: "Add dark mode to the settings page.", latest: "Different thing: our CI takes 40 minutes, can you speed it up?"}
+    - {previous: "Refactor the payment module.", latest: "Can you write me a script that renames all these photos by date?"}
+    - {previous: "Why is this test flaky?", latest: "Unrelated, but how do I set up SSH keys for GitHub?"}
+    - {previous: "Implement the CSV export.", latest: "OK that's done. Now I need a Dockerfile for the whole app."}
+    - {previous: "Make the sidebar collapsible.", latest: "Let's switch gears and look at the memory leak in the worker."}
+    - {previous: "Port utils.js to TypeScript.", latest: "Can you review PR 142 for me?"}
+    - {previous: "Add retries to the HTTP client.", latest: "Help me write the release notes for 2.3."}
+    - {previous: "Speed up the search endpoint.", latest: "New request: translate the onboarding emails into Spanish."}
+    - {previous: "Fix the typo in the header.", latest: "Now build a small CLI that tails our log files and highlights errors."}
+    - {previous: "Why does the build fail on Windows?", latest: "Moving on. Set up pre-commit hooks for the repo."}
+    - {previous: "Add input validation to the signup form.", latest: "Could you instead figure out why emails aren't being sent?"}
+    - {previous: "Upgrade React to 19.", latest: "Scratch that for now. Let's document the deployment process."}
+    - {previous: "Write tests for the auth middleware.", latest: "Quick question about something else: what's the best way to store secrets in this project?"}
+    - {previous: "Optimize the image resizing.", latest: "Can you set up a GitHub Action that publishes the package to PyPI?"}
+    - {previous: "Clean up the unused imports.", latest: "I want to add a whole new admin dashboard."}
+    - {previous: "Fix the timezone bug in reports.", latest: "Let's do the database backup script we talked about yesterday."}
+    - {previous: "Add a loading spinner.", latest: "Different project: in the mobile app repo, fix the crash on launch."}
+    - {previous: "Rename the config keys.", latest: "Also, separately, can you explain how our caching works?"}
+    - {previous: "Make the API return JSON errors.", latest: "Park that. The prod server is down, help me find out why."}
+    - {previous: "Implement dark mode.", latest: "Write a blog post announcing the new version."}
+    - {previous: "Why is memory usage so high?", latest: "Can you build a price-tracking bot for these three websites?"}
+    - {previous: "Add logging to the scheduler.", latest: "Forget the scheduler, I need you to migrate us off MySQL."}
+    - {previous: "Fix the flaky upload test.", latest: "Now let's add two-factor authentication."}
+    - {previous: "Resize the logo.", latest: "Set up a staging environment on Fly.io."}
+  continue:
+    - {previous: "Fix the addition bug in calc.py.", latest: "Also make it handle negative numbers."}
+    - {previous: "Add dark mode to the settings page.", latest: "Use the same colors as the landing page."}
+    - {previous: "Refactor the payment module.", latest: "Keep the public function names the same though."}
+    - {previous: "Why is this test flaky?", latest: "It only fails on CI, never locally, if that helps."}
+    - {previous: "Implement the CSV export.", latest: "Actually, make it semicolon-separated."}
+    - {previous: "Make the sidebar collapsible.", latest: "And remember the state between page loads."}
+    - {previous: "Port utils.js to TypeScript.", latest: "Strict mode please."}
+    - {previous: "Add retries to the HTTP client.", latest: "Three attempts max, with exponential backoff."}
+    - {previous: "Speed up the search endpoint.", latest: "It's mostly slow on queries with wildcards."}
+    - {previous: "Fix the typo in the header.", latest: "There's the same typo in the footer."}
+    - {previous: "Why does the build fail on Windows?", latest: "Here's the error output: LNK1104 cannot open file."}
+    - {previous: "Add input validation to the signup form.", latest: "Emails should be checked on the server too, not just the client."}
+    - {previous: "Upgrade React to 19.", latest: "Go ahead and update the tests that break."}
+    - {previous: "Write tests for the auth middleware.", latest: "Cover the expired-token case as well."}
+    - {previous: "Optimize the image resizing.", latest: "Can you try doing it with Pillow-SIMD instead?"}
+    - {previous: "Clean up the unused imports.", latest: "Leave the ones in __init__.py, they're re-exports."}
+    - {previous: "Fix the timezone bug in reports.", latest: "Users in Australia see yesterday's date."}
+    - {previous: "Add a loading spinner.", latest: "Make it a bit smaller and center it."}
+    - {previous: "Rename the config keys.", latest: "Keep the old names working for one release with a warning."}
+    - {previous: "Make the API return JSON errors.", latest: "Include an error code field, not just the message."}
+    - {previous: "Implement dark mode.", latest: "That looks good. Now the modals still show in light mode."}
+    - {previous: "Why is memory usage so high?", latest: "Try profiling with tracemalloc."}
+    - {previous: "Add logging to the scheduler.", latest: "Use structured JSON logs."}
+    - {previous: "Fix the flaky upload test.", latest: "Still failing about one run in ten."}
+    - {previous: "Resize the logo.", latest: "The retina version too."}
+
+requirement_detection:     # is this sentence something the user wants done or kept true when the work is finished?
+  requirements:
+    - "It'd be bad if this broke the old API."
+    - "Keep the output format the same."
+    - "Whatever you do, don't touch the billing code."
+    - "The page should load in under a second."
+    - "We need this to work on Python 3.9 as well."
+    - "Please make sure the existing tests still pass."
+    - "No new dependencies, if you can help it."
+    - "Users should be able to undo the deletion."
+    - "Error messages need to be translated too."
+    - "It has to handle files bigger than 2 GB."
+    - "Make sure nothing gets logged with the user's password."
+    - "The migration must be reversible."
+    - "I'd like the config to live in a single file."
+    - "Mobile users shouldn't see the admin link."
+    - "Don't change the database schema."
+    - "The CLI flags should stay backwards compatible."
+    - "Add a test for the empty-input case."
+    - "It must not call the network during tests."
+    - "The export should include the timestamp column."
+    - "Remember to update the docs."
+    - "Only admins should be able to see this page."
+    - "The job should be safe to run twice."
+    - "Please keep the commit history clean."
+    - "The response needs a Cache-Control header."
+    - "Everything should work offline."
+  not_requirements:
+    - "I tried this last week and it didn't work."
+    - "Our team is five people."
+    - "The old version was written in 2019."
+    - "Thanks, that was helpful."
+    - "I'm not sure why it's slow."
+    - "Here's the stack trace."
+    - "We use Postgres in production."
+    - "That's a good question."
+    - "The bug was reported by a customer yesterday."
+    - "I think the issue is in the parser."
+    - "Our CI runs on GitHub Actions."
+    - "Hmm, interesting."
+    - "Let me know what you find."
+    - "I'll be back in an hour."
+    - "The file is in the src folder."
+    - "This used to work before the upgrade."
+    - "My manager asked about this."
+    - "What does this function do?"
+    - "The logs are pretty noisy."
+    - "We had a similar problem in another project."
+    - "I'm on a Mac."
+    - "Good morning!"
+    - "Sorry, I pasted the wrong file."
+    - "It's a Django app."
+    - "The deadline is Friday."

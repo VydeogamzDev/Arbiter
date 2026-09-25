@@ -293,13 +293,27 @@ def cmd_semif(a: argparse.Namespace) -> int:
 
     paths = get_paths()
     config = load_config(paths)
+    if a.action == "export-onnx":
+        from arbiter_agent.semif.onnx_export import ParityError, export
+
+        if not a.model or not a.out:
+            print("usage: arbiter semif export-onnx --model DIR --out DIR [--precision w8e4|w8|fp16|fp32]",
+                  file=sys.stderr)
+            return 2
+        try:
+            m = export(Path(a.model).expanduser(), Path(a.out).expanduser(), a.precision)
+        except ParityError as exc:
+            print(f"export rejected: {exc}", file=sys.stderr)
+            return 1
+        print(f"wrote {Path(a.out) / m['file']} ({m['bytes'] / 1e6:.0f} MB); set semif.encoder.model to {a.out}")
+        return 0
     if a.action == "bench":
         from arbiter_agent.semif import benchmark
         from arbiter_agent.semif.service import SemIfService
 
         svc = SemIfService.from_config(config).start()
         try:
-            report = benchmark.run(svc)
+            report = benchmark.run(svc, item_list=benchmark.heldout_items() if a.heldout else None)
         finally:
             svc.stop()
         print(json.dumps(report, indent=1) if a.json else benchmark.render(report))
@@ -447,7 +461,13 @@ def add_parsers(sub: Any) -> None:
     s.set_defaults(fn=cmd_breakers)
 
     s = sub.add_parser("semif", help="semantic sensor: status, enable (plan tiers), disable, bench")
-    s.add_argument("action", nargs="?", default="status", choices=["status", "enable", "disable", "bench"])
+    s.add_argument("action", nargs="?", default="status",
+                   choices=["status", "enable", "disable", "bench", "export-onnx"])
+    s.add_argument("--heldout", action="store_true", help="bench: use the frozen held-out corpus")
+    s.add_argument("--model", help="export-onnx: GLiNER2.5-Decide weights folder")
+    s.add_argument("--out", help="export-onnx: output folder")
+    s.add_argument("--precision", default="w8e4", choices=["w8e4", "w8", "fp16", "fp32"],
+                   help="export-onnx: w8e4 (default, CPU), w8, fp16 (GPU) or fp32 (reference)")
     s.add_argument("--yes", action="store_true", help="enable: write the plan to config")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_semif)

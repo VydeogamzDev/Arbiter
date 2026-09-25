@@ -63,8 +63,10 @@ semif:
   backend: auto                 # auto | llama_cpp | exl3 | semif_bf16 | null (decision 0026); inert until M7
   encoder:                      # tier 0: short typed decisions on CPU or GPU, no GPU required (decision 0026)
     enabled: false
-    model: fastino/GLiNER2.5-Decide
-    device: auto                # auto | cpu | cuda
+    model: fastino/GLiNER2.5-Decide   # a Hub id or a local folder (weights, ONNX export or Core ML packages)
+    runtime: auto               # auto | torch | onnx | coreml; auto picks from what the folder holds
+    precision: w8               # coreml package precision (fp16 | w8 | lut6); onnx takes its export's
+    device: auto                # auto | cpu | cuda (torch runtime)
     families: [completion_claim, scope_change, requirement_detection, contract_coverage]
   model_tiers:                  # decoder tiers; `arbiter semif enable` proposes the largest that fits the GPU
     - {min_vram_gb: 6, model: JevK5, base: Qwen3.5-4B, quant: Q4_K_M}

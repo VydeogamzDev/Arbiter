@@ -217,8 +217,10 @@ Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends
 - **Done without a GPU:** M7.1, M7.1b (the encoder backend against a fake model), M7.2's llama.cpp client (tested against a mock `llama-server`), M7.3, M7.4, M7.5, M7.6 (`arbiter semif status|enable|disable|bench`; it plans tiers and never downloads anything itself), M7.7 (engine `decision_listeners` feeding `sensor_log`) and M7.8 (the benchmark harness over the eval corpus).
 - **Met in tests** (`tests/test_semif.py`): 0 malformed results consumed, saturation never blocks a hook, rules-only mode with the null backend.
 - **First real runs (CPU, 2026-09-24):** GLiNER2.5-Decide and JevK5 4B Q4_K_M were benchmarked on the eval corpus ([results](research/semantic-sensor-models.md#measured-results-2026-09-24-cpu-eval-corpus)). Neither beats the rules on any family, so nothing is routed and both stay shadow-only. Two backend fixes came from real runs: reasoning is disabled through the chat template, and scores are pre-sampling.
+- **Tier 0 runtimes and held-out corpus (2026-09-25, decision [0031](decisions/0031-tier0-runtimes-and-heldout-corpus.md)):** ONNX `w8e4` (1.08 GB RAM, ~0.26 s on CPU, same decisions as PyTorch), a Core ML backend for macOS, and one-pass mirroring. On the frozen held-out corpus the rules drop to about 0.55 on claims and scope changes. Rules plus sensor reach 0.95 (encoder, claims) and 0.94 (JevK5, scope changes); requirements stay with the rules (0.90). Routing isn't applied until an independent held-out set confirms it.
 - **Still pending:**
-  - a held-out corpus the rules weren't tuned on;
+  - a second, independent held-out set (real sessions with consent, or another author) before any family is routed;
+  - a real Mac run of the Core ML backend;
   - GPU runs (latency exit, K2 Horizon 7B), the BF16 reference backend and OOM recovery on a real server;
   - the tier-table benchmark on the 3080 Ti.
 

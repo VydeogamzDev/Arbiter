@@ -46,7 +46,7 @@ arbiter doctor                     # shows what's verified for each client
 | `arbiter exclude <path>` | stop recording sessions under a path |
 | `arbiter control` / `arbiter breakers` | manual controls and circuit breakers: switch a module off, turn the controller off (clients get their normal behavior back; events are still recorded), reset a breaker after inspecting it. Anything that weakens verification asks for confirmation in an interactive terminal |
 | `arbiter eval --faults` | inject a fault into every circuit breaker and check that each trips and fails safe |
-| `arbiter semif status` / `enable` / `bench` | optional semantic sensor: plans a model tier for your GPU (writes config only with `--yes`, never downloads by itself). Until measured it only logs judgments beside the rules and never changes a decision |
+| `arbiter semif status` / `enable` / `bench [--heldout]` / `export-onnx` | optional semantic sensor: plans a model tier for your GPU (writes config only with `--yes`, never downloads by itself), benchmarks it against the rules, and exports the tier 0 encoder to a small ONNX model (about 1 GB of RAM, CPU-friendly). It only logs judgments beside the rules and never changes a decision |
 
 Agents get these MCP tools:
 - **task state:** `arbiter_contract_propose`, `arbiter_contracts`, `arbiter_scope_change`, `arbiter_finish_check`, `arbiter_verify`;

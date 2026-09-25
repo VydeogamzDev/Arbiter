@@ -27,6 +27,7 @@ from arbiter_agent.state.contract_coverage import requirement_reason
 from arbiter_agent.state.text_norm import norm, sentences
 
 CORPUS = Path(__file__).resolve().parent.parent / "eval" / "corpus"
+HELDOUT = CORPUS / "heldout" / "sensor_v1.yaml"
 
 
 def items(corpus: Path | None = None) -> list[dict[str, Any]]:
@@ -62,6 +63,31 @@ def items(corpus: Path | None = None) -> list[dict[str, Any]]:
     return out
 
 
+def heldout_items(path: Path | None = None) -> list[dict[str, Any]]:
+    """Items from a frozen held-out file (never used for tuning; see its header)."""
+    data = yaml.safe_load((path or HELDOUT).read_text(encoding="utf-8"))
+    out: list[dict[str, Any]] = []
+    cc = data["completion_claim"]
+    for label, key in ((True, "claims"), (False, "non_claims")):
+        for msg in cc[key]:
+            out.append({"family": "completion_claim", "label": label, "rule": classify(msg).gated,
+                        "sections": [StateSection("final assistant message", msg, 0, True)]})
+    sc = data["scope_change"]
+    for label, key in ((True, "new_task"), (False, "continue")):
+        for pair in sc[key]:
+            rule = goal_epochs.decide(pair["latest"], first_in_session=False, after_resume=False).action
+            out.append({"family": "scope_change", "label": label, "rule": rule == "confirm_new",
+                        "sections": [StateSection("previous user message", pair["previous"], 20),
+                                     StateSection("latest user message", pair["latest"], 0, True)]})
+    rd = data["requirement_detection"]
+    for label, key in ((True, "requirements"), (False, "not_requirements")):
+        for sent in rd[key]:
+            out.append({"family": "requirement_detection", "label": label,
+                        "rule": requirement_reason(sent) is not None,
+                        "sections": [StateSection("sentence", sent, 0, True)]})
+    return out
+
+
 def _balanced_accuracy(pairs: list[tuple[bool, bool]]) -> float | None:
     pos = [p for p in pairs if p[0]]
     neg = [p for p in pairs if not p[0]]
@@ -86,13 +112,15 @@ def _ece(scores: list[tuple[float, bool]], bins: int = 10) -> float | None:
     return round(total, 4)
 
 
-def run(service: SemIfService, corpus: Path | None = None, deadline_s: float = 30.0) -> dict[str, Any]:
+def run(service: SemIfService, corpus: Path | None = None, deadline_s: float = 30.0,
+        item_list: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     by_family: dict[str, list[dict[str, Any]]] = {}
-    for it in items(corpus):
+    for it in (item_list if item_list is not None else items(corpus)):
         by_family.setdefault(it["family"], []).append(it)
     report: dict[str, Any] = {"families": {}}
     for family, its in by_family.items():
         answered: list[tuple[bool, bool]] = []
+        cascade: list[tuple[bool, bool]] = []          # sensor when it answers, else the rule (M8 cascade)
         scored: list[tuple[float, bool]] = []
         lat: list[float] = []
         for it in its:
@@ -105,6 +133,9 @@ def run(service: SemIfService, corpus: Path | None = None, deadline_s: float = 3
                 scored.append((j.probs.get(positive, 0.0), it["label"]))
             if not j.abstain and j.choice is not None:
                 answered.append((it["label"], j.choice == positive))
+                cascade.append((it["label"], j.choice == positive))
+            else:
+                cascade.append((it["label"], bool(it["rule"])))
         brier = (round(statistics.fmean((p - (1.0 if y else 0.0)) ** 2 for p, y in scored), 4) if scored else None)
         report["families"][family] = {
             "items": len(its), "coverage": round(len(answered) / len(its), 3),
@@ -112,6 +143,7 @@ def run(service: SemIfService, corpus: Path | None = None, deadline_s: float = 3
             "latency_p50_ms": round(statistics.median(lat), 2) if lat else None,
             "latency_p95_ms": round(sorted(lat)[max(0, round(0.95 * (len(lat) - 1)))], 2) if lat else None,
             "rules_balanced_accuracy": _balanced_accuracy([(it["label"], it["rule"]) for it in its]),
+            "cascade_balanced_accuracy": _balanced_accuracy(cascade),
         }
     report["backends"] = {"decoder": service.decoder.name, "encoder": service.encoder.name,
                           "encoder_families": sorted(service.encoder_families)}
@@ -121,12 +153,12 @@ def run(service: SemIfService, corpus: Path | None = None, deadline_s: float = 3
 def render(report: dict[str, Any]) -> str:
     b = report["backends"]
     lines = [f"Sensor benchmark (decoder: {b['decoder']}, encoder: {b['encoder']} for {b['encoder_families'] or '-'})",
-             "", f"{'family':<18}{'items':>6}{'coverage':>10}{'bal.acc':>9}{'brier':>8}{'ece':>8}{'p95 ms':>9}"
-                 f"{'rules':>8}"]
+             "", f"{'family':<22}{'items':>6}{'coverage':>10}{'bal.acc':>9}{'brier':>8}{'ece':>8}{'p95 ms':>9}"
+                 f"{'rules':>8}{'cascade':>9}"]
     for fam, m in report["families"].items():
         def f(v: Any) -> str:
             return "-" if v is None else str(v)
-        lines.append(f"{fam:<18}{m['items']:>6}{f(m['coverage']):>10}{f(m['balanced_accuracy']):>9}"
+        lines.append(f"{fam:<22}{m['items']:>6}{f(m['coverage']):>10}{f(m['balanced_accuracy']):>9}"
                      f"{f(m['brier']):>8}{f(m['ece']):>8}{f(m['latency_p95_ms']):>9}"
-                     f"{f(m['rules_balanced_accuracy']):>8}")
+                     f"{f(m['rules_balanced_accuracy']):>8}{f(m['cascade_balanced_accuracy']):>9}")
     return "\n".join(lines)
