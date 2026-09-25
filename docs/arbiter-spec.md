@@ -297,7 +297,7 @@ A client whose config format, hook payloads, or transcript format has drifted fr
 | Component | Target |
 | --- | --- |
 | Router GPU | RTX 3080 Ti, 12 GB |
-| Router model | Two stages behind a backend interface (decision 0026): tier 0 GLiNER2.5-Decide encoder (CPU or GPU, no GPU required) for short typed decisions; then a decoder tier by VRAM: JevK5 (Qwen3.5-4B + distilled LoRA, 6 GB+) or K2 Horizon 7B (12 GB+), GGUF Q4–Q6 via llama.cpp first. SemIf BF16 is kept as the reference path |
+| Router model | Two stages behind a backend interface (decision 0026): tier 0 GLiNER2.5-Decide encoder (CPU or GPU, no GPU required) for short typed decisions; then a decoder tier by VRAM: JevK5 (Qwen3.5-4B with a distilled LoRA merged in, 6 GB+) or K2 Horizon 7B (12 GB+), GGUF Q4–Q6 via llama.cpp first. SemIf BF16 is kept as the reference path |
 | Supported reference inference | BF16 fresh scoring |
 | Optimized reference | BF16 shared-state only after drift gate |
 | Optional future deployment | NVIDIA Q8 only after backend implementation + parity |
@@ -1036,7 +1036,7 @@ Decision 0026 applies. SemIf's direct-logit scoring is the technique; the runtim
   Every backend returns the same scored-option result and passes §7.3 validation.
 - **Two stages:**
   - **Tier 0 encoder (GLiNER2.5-Decide, 340M):** handles short, high-volume typed decisions on any machine: completion claims, scope changes, requirement detection, contract coverage. It needs no GPU.
-  - **Decoder tier:** handles long-context or reasoning-heavy judgments (context and retrieval relevance, review risk, effort): JevK5 (Qwen3.5-4B + distilled LoRA) at 6 GB+, K2 Horizon 7B at 12 GB+ (Q6_K at 16 GB+). Reasoning is disabled for scoring.
+  - **Decoder tier:** handles long-context or reasoning-heavy judgments (context and retrieval relevance, review risk, effort): JevK5 (Qwen3.5-4B with a distilled LoRA merged in) at 6 GB+, K2 Horizon 7B at 12 GB+ (Q6_K at 16 GB+). Reasoning is disabled for scoring.
   - Each decision family is routed to one stage by benchmark results. The encoder is trained on 512-token-class inputs, so longer inputs go to the decoder or are summarized deterministically first.
 - **Claim detection stays rules-first.** The encoder may only *add* completion claims the rules missed, which widens what the gate checks. It never removes a rule-detected claim and never marks anything verified.
 - **Adapters:** one base model stays in VRAM, with a LoRA adapter per decision family (completion claim, scope change, context relevance, retrieval relevance, review risk).

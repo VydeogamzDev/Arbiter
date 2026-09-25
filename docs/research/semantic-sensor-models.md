@@ -16,7 +16,7 @@ Every GPU below clears the demand by a wide margin. **Choose the model by accura
 
 - **Jev** (TypeSafe): a commercial typed-decision model. JevBench is the public benchmark for this category; Jev 1.13.0 scores 63.29 on v1.4.
 - **SemIf:** direct option-logit scoring on Qwen3.5-4B.
-- **JevK5:** Qwen3.5-4B plus a distilled LoRA, read out with SemIf's protocol (softmax over the answer letters' next-token logits, temperature T = 1.532). About 13 ms per decision on an H100 with CUDA graphs. Apache 2.0. Ranked second of 76 on JevBench v1.4 (62.04).
+- **JevK5:** Qwen3.5-4B with a distilled LoRA, published merged (`alibiserikbay/JevK5`, BF16, 8.41 GB) and as GGUF (`alibiserikbay/JevK5-GGUF`: Q4_K_M 2.71 GB, Q8_0 4.48 GB, plus a 2B Q8_0), read out with SemIf's protocol (softmax over the answer letters' next-token logits, temperature T = 1.532). About 13 ms per decision on an H100 with CUDA graphs. Apache 2.0. Ranked second of 76 on JevBench v1.4 (62.04).
 - **GLiNER2.5-Decide** (Fastino, released 2026-09-24):
   - a 340M DeBERTa-v3-large encoder, Apache 2.0;
   - handles single-label, multi-label, yes/no, 0–10 score, and questions over a passage;
@@ -96,8 +96,8 @@ These are *estimates* for a 340M encoder (DeBERTa-v3-large-class).
 
 | Where it runs | Footprint | Short decision (≤ 256 tokens) |
 | --- | --- | --- |
-| Modern desktop CPU | ~0.7 GB RAM (FP16/INT8 ONNX: less) | ~20–60 ms |
-| Any recent NVIDIA GPU | ~0.7 GB VRAM | ~3–10 ms, batches well |
+| Modern desktop CPU | ~2 GB RAM (the published weights are FP32, 1.95 GB; FP16/INT8 ONNX: less) | ~20–60 ms |
+| Any recent NVIDIA GPU | ~1 GB VRAM in FP16 (2 GB FP32) | ~3–10 ms, batches well |
 
 That's far above demand, and it needs no GPU. That's why tier 0 can ship before the decoder backend.
 
@@ -108,6 +108,25 @@ That's far above demand, and it needs no GPU. That's why tier 0 can ship before 
 - **Working guess, to be replaced by the M7 benchmark:**
   - untuned, K2 is a few to about 10 accuracy points better on subtle judgments (scope change, relevance, claim nuance);
   - after fine-tuning both, a few points.
+
+## Measured results (2026-09-24, CPU, eval corpus)
+
+These are the first real runs of `semif/benchmark.py`: 120 labeled items from the eval corpus, both option orders per binary question, no fine-tuning or calibration. Both runs were on the development machine's CPU (the 3080 Ti was in repair). The "rules" column is the deterministic baseline on the same items.
+
+| Family (items) | Rules | GLiNER2.5-Decide: coverage / bal. acc. / ECE | JevK5 4B Q4_K_M: coverage / bal. acc. / ECE |
+| --- | --- | --- | --- |
+| completion_claim (60) | 1.00 | 90% / 1.00 / 0.20 | 87% / 0.97 / 0.17 |
+| scope_change (20) | 1.00 | 65% / 0.76 / 0.19 | 65% / 1.00 / 0.09 |
+| requirement_detection (40) | 0.83 | 45% / 0.75 / 0.44 | 43% / 0.57 / 0.49 |
+| p95 latency per judgment (2 variants) | <1 ms | ~0.8 s (CPU) | ~4.4 s (CPU; GPU expected ~50–100 ms) |
+
+- **Neither model beats the rules on any family yet**, so nothing is routed to the sensor (`semif.route_families` stays empty) and both stay shadow-only. That's the M7 exit rule working as intended.
+- **The corpus flatters the rules.** It was written alongside them, and they score 1.0 on two families. A fair comparison needs a held-out corpus of phrasings the rules weren't tuned on: paraphrased claims, implicit scope changes, requirements stated indirectly.
+- **What looks promising:** JevK5 is well calibrated on scope change (ECE 0.09) and both models are accurate on completion claims when they answer. Requirement detection is weak zero-shot for both. It's the first candidate for a fine-tuned adapter (research track R6).
+- **Runtime notes:**
+  - JevK5 is a reasoning model. With a raw prompt it opens `<think>` (letter mass 0), so the backend renders the model's chat template with `enable_thinking: false`.
+  - Scores must be pre-sampling: llama.cpp's post-sampling probabilities at temperature 0 are 1.0 for the greedy token.
+  - The published GLiNER2.5-Decide weights are FP32 (1.95 GB). They load in about 6–10 s on CPU.
 
 ## Quantization and runtimes
 

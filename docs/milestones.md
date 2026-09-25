@@ -198,7 +198,7 @@ Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends
   - **Confidence** is calibrated before the cascade uses it.
   - **No GPU needed,** so it can ship as v0.2 before M7.2.
 - **M7.2 llama.cpp GGUF backend**: `backends/llama_cpp`, with direct option-logit scoring, prefix caching, multi-LoRA, a bounded queue, deadlines, OOM recovery, and restart backoff. The SemIf BF16 path (`backends/semif_bf16`) is kept as the reference and parity backend. **Needs the 3080 Ti.**
-- **M7.2b Decoder tiers by VRAM**: JevK5 (Qwen3.5-4B + distilled LoRA) Q4_K_M at 6 GB+, K2 Horizon 7B Q4_K_M at 12 GB+, Q6_K at 16 GB+ (K2 at 8 GB is opt-in, short context only). Reasoning is disabled for scoring. Each decision family is routed to the encoder or a decoder tier by benchmark.
+- **M7.2b Decoder tiers by VRAM**: JevK5 (Qwen3.5-4B, distilled LoRA merged; `alibiserikbay/JevK5-GGUF` Q4_K_M, 2.71 GB) at 6 GB+, K2 Horizon 7B Q4_K_M at 12 GB+, Q6_K at 16 GB+ (K2 at 8 GB is opt-in, short context only). Reasoning is disabled for scoring. Each decision family is routed to the encoder or a decoder tier by benchmark.
 - **M7.3 Request budgeting**: `semif/request_budget`, using the exact tokenizer with criterion/envelope reserve (§7.2).
 - **M7.4 Validation**: `semif/validation`. Rejects NaN, malformed output, or a wrong revision, and abstains on failure (§7.3).
 - **M7.5 Mirroring + batching**: `semif/mirroring`, `batching`, with identical prefixes only.
@@ -216,7 +216,11 @@ Stage 3 · Build steps 21–22 · Decision [0026](decisions/0026-sensor-backends
 **Progress (2026-09-24, decision [0029](decisions/0029-m7-sensor-service.md)):**
 - **Done without a GPU:** M7.1, M7.1b (the encoder backend against a fake model), M7.2's llama.cpp client (tested against a mock `llama-server`), M7.3, M7.4, M7.5, M7.6 (`arbiter semif status|enable|disable|bench`; it plans tiers and never downloads anything itself), M7.7 (engine `decision_listeners` feeding `sensor_log`) and M7.8 (the benchmark harness over the eval corpus).
 - **Met in tests** (`tests/test_semif.py`): 0 malformed results consumed, saturation never blocks a hook, rules-only mode with the null backend.
-- **Pending on the 3080 Ti and model downloads:** real llama.cpp runs, the BF16 reference backend, OOM recovery on a real server, the latency exit, and the tier-table benchmark on the actual quantized files. Until then the sensor is shadow-only.
+- **First real runs (CPU, 2026-09-24):** GLiNER2.5-Decide and JevK5 4B Q4_K_M were benchmarked on the eval corpus ([results](research/semantic-sensor-models.md#measured-results-2026-09-24-cpu-eval-corpus)). Neither beats the rules on any family, so nothing is routed and both stay shadow-only. Two backend fixes came from real runs: reasoning is disabled through the chat template, and scores are pre-sampling.
+- **Still pending:**
+  - a held-out corpus the rules weren't tuned on;
+  - GPU runs (latency exit, K2 Horizon 7B), the BF16 reference backend and OOM recovery on a real server;
+  - the tier-table benchmark on the 3080 Ti.
 
 ## M8 — Policy core + full circuit breakers ✅ Done 2026-09-24
 Stage 4 · Build step 23 · **Required before any automatic stage** (decision 0009)

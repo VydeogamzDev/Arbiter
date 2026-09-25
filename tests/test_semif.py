@@ -260,8 +260,11 @@ class _Server:
 
             def do_GET(self) -> None:
                 if self.path == "/props":
-                    self._send({"model_path": "C:\\models\\Qwen3.5-4B-Q4_K_M.gguf", "build_info": "b9999",
-                                "default_generation_settings": {"n_ctx": 8192}})
+                    props = {"model_path": "C:\\models\\Qwen3.5-4B-Q4_K_M.gguf", "build_info": "b9999",
+                             "default_generation_settings": {"n_ctx": 8192}}
+                    if outer.mode == "chat":
+                        props["chat_template"] = "{{ messages }}"
+                    self._send(props)
                 else:
                     self._send({"status": "ok"})
 
@@ -271,6 +274,15 @@ class _Server:
                 if self.path == "/tokenize":
                     self._send({"tokens": list(range(len(body["content"].split())))})
                     return
+                if self.path == "/apply-template":
+                    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+                    self._send({"prompt": "<|im_start|>user\n" + body["messages"][0]["content"] +
+                                          "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"})
+                    return
+                if outer.mode == "chat" and "<think>\n\n</think>" not in body["prompt"]:
+                    first = {"top_logprobs": [{"token": "<think>", "logprob": 0.0}]}   # would start reasoning
+                    self._send({"completion_probabilities": [first]})
+                    return
                 # the answer letter for "yes" is wherever "yes" appears in the prompt's option list
                 yes_first = body["prompt"].find("A. yes") != -1 or body["prompt"].find("A) yes") != -1
                 a, b = (0.85, 0.1) if yes_first else (0.1, 0.85)
@@ -279,6 +291,8 @@ class _Server:
                 if outer.mode == "probs":
                     first = {"probs": [{"tok_str": "A", "prob": a}, {"tok_str": " B", "prob": b},
                                        {"tok_str": "The", "prob": 0.05}]}
+                elif outer.mode == "top_probs":
+                    first = {"top_probs": [{"token": "A", "prob": a}, {"token": "B", "prob": b}]}
                 else:
                     first = {"top_logprobs": [{"token": "A", "logprob": math.log(a)},
                                               {"token": "B", "logprob": math.log(b)}]}
@@ -293,18 +307,22 @@ class _Server:
         self.httpd.server_close()
 
 
-@pytest.mark.parametrize("mode", ["logprobs", "probs"])
+@pytest.mark.parametrize("mode", ["logprobs", "probs", "top_probs", "chat"])
 def test_llama_cpp_backend_scores_letters(mode):
     srv = _Server(mode)
     try:
         be = LlamaCppBackend(srv.url, revision="qwen-r1")
-        assert be.model == "Qwen3.5-4B-Q4_K_M.gguf" and be.max_tokens == 8192 and be.count_tokens("a b c") == 3
+        assert be.model == "Qwen3.5-4B-Q4_K_M.gguf" and be.count_tokens("a b c") == 3
+        assert be.chat == (mode == "chat") and be.max_tokens == (8192 - 64 if mode == "chat" else 8192)
         svc = SemIfService(be)
         j = svc.judge(_q(), deadline_s=10)
         assert j.choice == "yes" and not j.abstain, j.reason
         assert all(r.cache_mode == "prefix_cached" for r in j.results)
         comp = [b for b in srv.bodies if "n_predict" in b]
         assert comp and all(b["n_predict"] == 1 and b["cache_prompt"] for b in comp)
+        assert not any(b.get("post_sampling_probs") for b in comp)       # pre-sampling scores only
+        if mode == "chat":
+            assert all("</think>" in b["prompt"] for b in comp)          # reasoning disabled via the template
         assert be.health()["ok"]
     finally:
         srv.close()
@@ -414,3 +432,29 @@ def test_tier_plan_by_vram():
     assert mid.decoder and mid.decoder["model"] == "K2-Horizon-7B" and mid.decoder["quant"] == "Q4_K_M"
     eight = hardware.plan(cfg, gpus=[hardware.Gpu("RTX 4060", 8.0)])
     assert eight.decoder and eight.decoder["model"] == "JevK5"
+
+
+def test_encoder_loads_local_folder_quietly(tmp_path, monkeypatch, capsys):
+    import sys
+    import types
+
+    folder = tmp_path / "GLiNER2.5-Decide"
+    folder.mkdir()
+    (folder / "config.json").write_text('{"model": "x"}', encoding="utf-8")
+    (folder / "model.safetensors").write_bytes(b"\0" * 1234)
+    seen = {}
+
+    class Auto:
+        @staticmethod
+        def from_pretrained(path, **kw):
+            seen["path"] = path
+            print("\U0001f9e0 Model Configuration")      # gliner2's banner: crashes a cp1252 console
+            return types.SimpleNamespace(classify_text=lambda *a, **k: {"answer": {"label": "yes",
+                                                                                    "confidence": 0.9}})
+
+    monkeypatch.setitem(sys.modules, "gliner2", types.SimpleNamespace(AutoExtractor=Auto))
+    be = EncoderBackend(str(folder), device="cpu")
+    assert seen["path"] == str(folder) and capsys.readouterr().out == ""
+    assert be.model == "GLiNER2.5-Decide" and be.revision.startswith("local:") and be.revision.endswith(":1234")
+    (folder / "config.json").write_text('{"model": "y"}', encoding="utf-8")
+    assert EncoderBackend(str(folder)).revision != be.revision       # a changed checkpoint changes the revision

@@ -13,7 +13,7 @@
 - **Accuracy decides how much the sensor saves.** The cascade (§7.7) abstains when the sensor is unsure, and every abstention is a lost saving.
 - **Amended the same day** after two findings:
   - Fastino released **GLiNER2.5-Decide**, a 340M Apache-2.0 typed-decision encoder that runs on CPU. On Fastino's own 17-domain suite it scores 60.2%, vs 57.6% for JevK5 and 56.4% for SemIf; "agent completion" is one of its trained domains.
-  - **JevK5** turned out to be Qwen3.5-4B plus a distilled LoRA and a calibrated temperature, using SemIf's scoring method: an already-tuned version of the 6 GB tier model.
+  - **JevK5** turned out to be Qwen3.5-4B with a distilled LoRA (published merged, with its own GGUF builds) and a calibrated temperature, using SemIf's scoring method: an already-tuned version of the 6 GB tier model.
 
 ## Decision
 1. **SemIf is one candidate behind a backend interface, not a fixed dependency.** Backends:
@@ -28,14 +28,14 @@
 
    | Tier | Hardware | Default model | Handles |
    | --- | --- | --- | --- |
-   | 0 | any (CPU fine, ~0.7 GB) | GLiNER2.5-Decide (340M encoder) | short, high-volume typed decisions: completion claim, scope change / continuation, requirement detection, contract coverage |
-   | 1 | 6 GB+ VRAM | JevK5 = Qwen3.5-4B + distilled LoRA, Q4_K_M (Q5_K_M/Q6_K at 8 GB) | long-context and reasoning-heavy judgments |
+   | 0 | any (CPU fine; 1.95 GB FP32 weights) | GLiNER2.5-Decide (340M encoder) | short, high-volume typed decisions: completion claim, scope change / continuation, requirement detection, contract coverage |
+   | 1 | 6 GB+ VRAM | JevK5 (Qwen3.5-4B, distilled LoRA merged), Q4_K_M 2.71 GB (Q8_0 4.48 GB at 8 GB) | long-context and reasoning-heavy judgments |
    | 2 | 12 GB+ VRAM | K2 Horizon 7B, Q4_K_M (Q5_K_M if headroom allows) | the same, stronger |
    | 2+ | 16 GB+ VRAM | K2 Horizon 7B, Q6_K | the same, closer to BF16 logits |
 
    - **Tier 0 needs no GPU,** so it can ship before the decoder backend (M7.2) and before the 3080 Ti returns.
    - **Routing:** each decision family is sent to exactly one stage, based on benchmark results. The encoder is trained on 512-token-class inputs, so longer inputs go to the decoder or are summarized deterministically first.
-   - **JevK5 on llama.cpp:** it's used as a GGUF base plus a converted LoRA, or merged into one GGUF. Its calibration temperature is re-fit on the quantized file.
+   - **JevK5 on llama.cpp:** the published merged GGUF (`alibiserikbay/JevK5-GGUF`) is used directly; no separate base model or adapter is needed. Its calibration temperature is re-fit on the quantized file.
 
    K2 Horizon 7B also runs at 8 GB with a short context (about 8–10k tokens). It's allowed there as an opt-in, not the default.
 

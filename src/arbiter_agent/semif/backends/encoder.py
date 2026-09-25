@@ -1,6 +1,7 @@
 """Tier 0 encoder backend: GLiNER2.5-Decide (340M, CPU or GPU; decision 0026).
 
-Optional dependency: ``pip install gliner2`` (``arbiter-agent[encoder]``). The model classifies a
+Optional dependency: ``gliner2[local]`` (``arbiter-agent[encoder]``); the bare package only calls
+Fastino's hosted API, which Arbiter never uses. ``model_id`` may be a local folder. The model classifies a
 passage against labelled options with an optional question (``classify_text``). When the library
 reports a confidence it becomes a score; a bare label is marked ``hard_label`` so the mirroring
 step treats it as uninformative until calibrated.
@@ -8,7 +9,9 @@ step treats it as uninformative until calibrated.
 
 from __future__ import annotations
 
+import hashlib
 import time
+from pathlib import Path
 from typing import Any
 
 from arbiter_agent.concurrency import Deadline
@@ -16,6 +19,15 @@ from arbiter_agent.semif.backends.base import ScoreRequest
 from arbiter_agent.semif.types import TEMPLATE_VERSION, ScoreResult
 
 ENCODER_MAX_TOKENS = 512     # DeBERTa-v3 was trained on 512-token inputs
+
+
+def _local_revision(folder: Path) -> str | None:
+    """A cheap identity for a local model folder: config hash plus weights size (hashing 2 GB of
+    weights on every start would cost seconds). A changed checkpoint changes the revision."""
+    cfg, weights = folder / "config.json", folder / "model.safetensors"
+    if not (folder.is_dir() and cfg.exists() and weights.exists()):
+        return None
+    return f"local:{hashlib.sha256(cfg.read_bytes()).hexdigest()[:12]}:{weights.stat().st_size}"
 
 
 class EncoderBackend:
@@ -27,16 +39,24 @@ class EncoderBackend:
                  revision: str | None = None, model: Any = None) -> None:
         self.model_id = model_id
         self.device = device
+        local = Path(model_id).expanduser()
         if model is None:
-            from gliner2 import AutoExtractor  # optional dependency
+            import contextlib
+            import io
 
-            model = AutoExtractor.from_pretrained(model_id, **({"revision": revision} if revision else {}))
+            from gliner2 import AutoExtractor  # optional dependency: arbiter-agent[encoder]
+
+            # gliner2 prints a banner (with emoji) while loading; on a cp1252 console or a detached
+            # daemon that crashes the load, so it's captured.
+            with contextlib.redirect_stdout(io.StringIO()):
+                model = AutoExtractor.from_pretrained(str(local) if local.is_dir() else model_id,
+                                                      **({"revision": revision} if revision else {}))
             if device not in ("auto", "cpu") and hasattr(model, "to"):
                 model = model.to(device)
         self._model = model
-        self.model = model_id
-        self.revision = revision or f"unpinned:{getattr(model, 'version', 'local')}"
-        tok = getattr(model, "tokenizer", None)
+        self.model = local.name if local.is_dir() else model_id
+        self.revision = revision or _local_revision(local) or f"unpinned:{getattr(model, 'version', 'hub')}"
+        tok = getattr(model, "tokenizer", None) or getattr(getattr(model, "processor", None), "tokenizer", None)
         self._tokenizer = tok if callable(getattr(tok, "encode", None)) else None
         self.tokenizer = type(tok).__name__ if tok is not None else "bytes-upper-bound"
 

@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-encoder = ["gliner2"]      # tier 0 sensor (GLiNER2.5-Decide); pulls PyTorch
+encoder = ["gliner2[local]>=2.0,<3"]   # tier 0 sensor (GLiNER2.5-Decide), local inference; pulls PyTorch
 
 [project.scripts]
 arbiter = "arbiter_agent.cli:main"
@@ -63,3 +63,10 @@ files = ["src/arbiter_agent"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# optional sensor stack ([encoder] extra): untyped for our purposes, and never type-checked here
+module = ["gliner2", "gliner2.*", "torch", "torch.*", "transformers", "transformers.*", "numpy", "numpy.*",
+          "peft", "peft.*", "safetensors", "safetensors.*"]
+follow_imports = "skip"
+follow_untyped_imports = false

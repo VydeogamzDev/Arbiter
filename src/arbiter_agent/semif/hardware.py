@@ -49,10 +49,11 @@ def detect_gpus() -> list[Gpu]:
 
 def plan(config: Any, gpus: list[Gpu] | None = None) -> Plan:
     p = Plan(gpus=detect_gpus() if gpus is None else gpus)
-    p.encoder_available = importlib.util.find_spec("gliner2") is not None
+    p.encoder_available = all(importlib.util.find_spec(m) is not None for m in ("gliner2", "torch"))
     if not p.encoder_available:
         p.notes.append("tier 0 needs the gliner2 package: `uv tool install 'arbiter-agent[encoder]'` "
-                       "(pulls PyTorch; the model is about 0.7 GB, downloaded on first use)")
+                       "(pulls PyTorch; the model weights are 1.95 GB, downloaded on first use unless "
+                       "semif.encoder.model points at a local folder)")
     vram = max((g.vram_gb for g in p.gpus), default=0.0)
     tiers = sorted(config.get("semif.model_tiers") or [], key=lambda t: float(t.get("min_vram_gb", 0)))
     fitting = [t for t in tiers if vram >= float(t.get("min_vram_gb", 0))]
