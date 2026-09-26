@@ -109,6 +109,7 @@ class SessionEngine:
         self.graph_provider: Callable[[str], tuple[list[str], dict[str, set[str]]]] | None = None
         # (cwd, context dict, refresh budget s) -> retrieval.context result (set by the daemon; M10.4)
         self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
+        self.pack_provider: Callable[[str, dict[str, Any], float, int], dict[str, Any]] | None = None
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -637,7 +638,9 @@ class SessionEngine:
             flag_uncovered = bool(self.config.get("completion.flag_uncovered_intent", True))
             ledger = evidence_ledger.build(sid, epoch, evals, uncovered, integrity,
                                            [f for f in fs if f["goal_epoch"] == epoch or f["kind"] != "loop_alert"],
-                                           alerts, flag_uncovered=flag_uncovered)
+                                           alerts, flag_uncovered=flag_uncovered,
+                                           evidence_mode=str(self.config.get("completion.evidence_mode", "observed")),
+                                           change_seq=ctx.last_code_change_seq())
             return st, ledger
         finally:
             rc.close()
@@ -857,7 +860,8 @@ class SessionEngine:
                 text, h = ui_status.injection(state, last_hash=state.get("last_injected_hash"),
                                               max_tokens=int(self.config.get("hooks.max_injected_tokens", 300)),
                                               only_on_change=bool(self.config.get("hooks.inject_only_on_change",
-                                                                                  True)))
+                                                                                  True)),
+                                              signal_only=bool(self.config.get("ui.status_signal_only", True)))
                 if text is not None:
                     parts.append(text)
                     self.writer.run(lambda c: c.execute(
@@ -885,10 +889,16 @@ class SessionEngine:
                      max(0.0, deadline.remaining() - 0.1))
         if budget <= 0.02:
             return None
-        provider = self.context_provider
         query = last[-1].text[:2000]
+        qctx = {"query": query, "misses": len(self.misses.recent(sid))}
+        pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 2500))
+        use_pack = self.pack_provider is not None and pack_tokens > 0
         ex = cf.ThreadPoolExecutor(max_workers=1)
-        fut = ex.submit(provider, cwd, {"query": query, "misses": len(self.misses.recent(sid))}, budget * 0.6)
+        if use_pack:
+            assert self.pack_provider is not None
+            fut = ex.submit(self.pack_provider, cwd, qctx, budget * 0.6, pack_tokens)
+        else:
+            fut = ex.submit(self.context_provider, cwd, qctx, budget * 0.6)
         try:
             res = fut.result(timeout=budget)
         except Exception:
@@ -896,6 +906,15 @@ class SessionEngine:
             return None
         finally:
             ex.shutdown(wait=False)
+        if use_pack:
+            picks = list(res.get("picks") or [])
+            if not res.get("text"):
+                return None
+            self.misses.surfaced(sid, picks, query)
+            self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
+            self.stats["auto_context_pack_tokens"] = self.stats.get("auto_context_pack_tokens", 0) + int(
+                res.get("tokens") or 0)
+            return str(res["text"])
         pins = [p["path"] for p in res.get("pins", [])]
         ranked = [r["path"] for r in res.get("ranked", [])]
         if not pins and int(res.get("k") or 99) > 6:

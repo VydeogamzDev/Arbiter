@@ -37,10 +37,21 @@ def summary_line(state: dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
+def has_signal(state: dict[str, Any]) -> bool:
+    """Something the agent should know: a failing contract, weakened tests, a loop, an unverified
+    finish check. Routine state ("no contracts recorded; tests 0 pass/0 fail") is noise that cost
+    tokens and nudged agents toward ceremony in real runs, so it isn't injected."""
+    c = state.get("counts") or {}
+    return bool(c.get("fail") or "ALERT" in str(state.get("integrity") or "") or state.get("loop_alerts")
+                or state.get("last_verdict") == "unverified")
+
+
 def injection(state: dict[str, Any], *, last_hash: str | None, max_tokens: int,
-              only_on_change: bool = True) -> tuple[str | None, str]:
+              only_on_change: bool = True, signal_only: bool = True) -> tuple[str | None, str]:
     """(text to inject or None, content hash)."""
     text = f"{WORDING} {summary_line(state)}."
+    if signal_only and not has_signal(state):
+        return None, hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
     if approx_tokens(text) > max_tokens:
         text = text[: max(0, max_tokens * 4 - 1)] + "…"
     h = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

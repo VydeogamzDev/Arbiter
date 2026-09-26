@@ -137,8 +137,9 @@ retrieval:
   embeddings: "off"             # optional vector channel (M6.5); only "off" ships
   auto_context: false           # M10.4: inject likely files when a prompt starts a new task (bounded); opt-in,
                                 # like ui.inject_status: it adds tokens to prompts and client formats vary
-  auto_context_max_tokens: 150
-  auto_context_deadline_ms: 250 # skipped entirely if the index can't answer in time
+  auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
+  auto_context_pack_tokens: 2500   # pre-read task pack: repo map, test command, top files + their imports; 0 = names only
+  auto_context_deadline_ms: 1000   # skipped entirely if the index can't answer in time (a cold small repo takes ~250 ms)
 
 review:
   security_floor: high
@@ -154,6 +155,8 @@ completion:
   gate_only_on_completion_claims: true
   max_stop_blocks_per_epoch: 3  # block mode only
   contracts_proposed_by: host_agent
+  evidence_mode: observed        # observed: with no contracts, a passing test run after the last code change
+                                # (and no weakened tests) verifies; contracts: always require contracts
   require_verbatim_quote_provenance: true
   agent_asserted_evidence_sufficient: false
   flag_uncovered_intent: true
@@ -179,6 +182,7 @@ state:
 
 ui:
   inject_status: false          # hook additionalContext status summaries (on change, within max_injected_tokens)
+  status_signal_only: true      # inject only when there's news (failing contract, weakened tests, loop, unverified)
 
 learning:
   auto_enabled: false

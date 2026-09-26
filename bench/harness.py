@@ -259,6 +259,13 @@ def run_fake(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | Non
             host.prompt(prompt)
     if variant in ("solution", "sloppy"):
         overlay(task["dir"] / variant, ws)
+        if host:
+            for i, f in enumerate(sorted(p for p in (task["dir"] / variant).rglob("*") if p.is_file())):
+                target = ws / f.relative_to(task["dir"] / variant)
+                host.send_hook("PostToolUse", {**host._common(), "tool_name": "Write",
+                                               "tool_input": {"file_path": str(target)},
+                                               "tool_response": {"filePath": str(target)},
+                                               "tool_use_id": f"write_{i}_{uuid.uuid4().hex[:6]}"})
     if host and arb.cond.mcp and variant == "solution":
         # Record one contract per prompt the way the agent is asked to (verbatim quote + test recipe).
         import re

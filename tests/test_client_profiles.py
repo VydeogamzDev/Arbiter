@@ -208,7 +208,7 @@ def test_dialect_hooks_through_the_daemon(home, tmp_path):
     from arbiter_agent.config.loader import build_config
     from arbiter_agent.daemon.server import Daemon
 
-    d = Daemon(home, config=build_config({"completion": {"gate_mode": "block"}})).start()
+    d = Daemon(home, config=build_config({"completion": {"gate_mode": "block", "evidence_mode": "contracts"}})).start()
     try:
         for client, start, stop, sfield, mfield in (
                 ("gemini_cli", "BeforeAgent", "AfterAgent", "session_id", "prompt_response"),

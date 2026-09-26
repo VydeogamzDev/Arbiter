@@ -133,6 +133,40 @@ class RetrievalService:
         cands = candidates.gather(idx, ident.root, qc, policy=policy)
         return self._envelope(ident, idx, res, reranker.rerank(cands, qc).to_dict())
 
+    def context_pack(self, cwd: str, ctx: dict[str, Any], budget_s: float | None, max_tokens: int) -> dict[str, Any]:
+        """The ranking of :meth:`context` plus a pre-read pack of the files a task needs first."""
+        from arbiter_agent.retrieval import candidates, context_pack, reranker
+
+        ident, idx, policy, res = self.prepare(cwd, budget_s)
+        self.stats["queries"] += 1
+        qc = candidates.QueryContext.from_dict(ctx)
+        ranking = reranker.rerank(candidates.gather(idx, ident.root, qc, policy=policy), qc).to_dict()
+        files = [f for f in idx.files(ident.root) if policy.allowed(f)]
+        deps, _ = idx.graph(ident.root)
+        pins = [p["path"] for p in ranking.get("pins", [])]
+        ranked = [r["path"] for r in ranking.get("ranked", [])]
+
+        def tests_of(p: str) -> list[str]:
+            return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
+
+        picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
+        root = Path(ident.root)
+
+        def read(rel: str) -> str | None:
+            if not policy.allowed(rel):
+                return None
+            try:
+                raw = (root / rel).read_bytes()
+            except OSError:
+                return None
+            if b"\0" in raw[:4096]:
+                return None
+            return self._redact(raw.decode("utf-8", errors="replace"))[0]
+
+        text = context_pack.build(root, files, picks, read, max_tokens)
+        return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text,
+                                                "tokens": (len(text) + 3) // 4 if text else 0})
+
     def status(self, cwd: str) -> dict[str, Any]:
         ident, idx, _, res = self.prepare(cwd, budget_s=0.5)
         return self._envelope(ident, idx, res, {"db": str(idx.db_path)})

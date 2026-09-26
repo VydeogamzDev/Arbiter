@@ -75,7 +75,8 @@ def test_annotate_never_blocks_and_records_ledger():
 
 
 def test_block_mode_wording_and_bound():
-    with Harness(config={"completion": {"gate_mode": "block", "max_stop_blocks_per_epoch": 2}}) as h:
+    with Harness(config={"completion": {"gate_mode": "block", "max_stop_blocks_per_epoch": 2,
+                                        "evidence_mode": "contracts"}}) as h:
         _session(h, verified=False)
         r1 = h.stop("Done.")
         assert r1["decision"] == "block" and gate.check_wording(r1["reason"]) == []
@@ -171,17 +172,27 @@ def test_parser_breaker_turns_runner_results_unknown():
 # ------------------------------------------------------------------ status injection
 def test_status_injection_only_on_change_and_capped():
     state = {"goal_epoch": 2, "counts": {"pass": 1, "fail": 0, "unknown": 1}}
-    text, h1 = injection(state, last_hash=None, max_tokens=300)
+    text, h1 = injection(state, last_hash=None, max_tokens=300, signal_only=False)
     assert text and text.startswith("[Arbiter]") and approx_tokens(text) <= 300
-    assert injection(state, last_hash=h1, max_tokens=300)[0] is None
-    short, _ = injection(state, last_hash=None, max_tokens=10)
+    assert injection(state, last_hash=h1, max_tokens=300, signal_only=False)[0] is None
+    short, _ = injection(state, last_hash=None, max_tokens=10, signal_only=False)
     assert short is not None and approx_tokens(short) <= 11
+
+
+def test_status_injection_signal_only():
+    quiet = {"goal_epoch": 1, "tests": {"tests_passed": 0, "tests_failed": 0}, "integrity": "no weakening detected"}
+    assert injection(quiet, last_hash=None, max_tokens=300)[0] is None
+    for news in ({"counts": {"fail": 1}}, {"integrity": "ALERT: skip added x1"}, {"loop_alerts": 1},
+                 {"last_verdict": "unverified"}):
+        assert injection({**quiet, **news}, last_hash=None, max_tokens=300)[0] is not None
 
 
 def test_status_injection_default_off_and_on_when_enabled():
     with Harness() as h:
         assert h.prompt("Fix the addition bug in calc.py.") == {}
     with Harness(config={"ui": {"inject_status": True}}) as h:
+        assert h.prompt("Fix the addition bug in calc.py.") == {}   # routine state: nothing worth saying
+    with Harness(config={"ui": {"inject_status": True, "status_signal_only": False}}) as h:
         r = h.prompt("Fix the addition bug in calc.py.")
         ctx = r["hookSpecificOutput"]["additionalContext"]
         assert r["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit" and "goal epoch 1" in ctx

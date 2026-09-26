@@ -2,8 +2,10 @@
 
 The verdict is "verified to the configured evidence standard", never "correct":
 - every active contract is PASS or WAIVED (UNKNOWN never counts as PASS);
-- there is at least one contract (nothing to check means unverified);
-- no requirement-like intent in the active epoch is left uncovered;
+- there is at least one contract (nothing to check means unverified), or, in the default
+  ``completion.evidence_mode: observed``, Arbiter observed a passing test run after the last
+  code change (and something was done for this task at all);
+- when contracts exist, no requirement-like intent in the active epoch is left uncovered;
 - test-based PASS evidence is only counted when test integrity is OK against a baseline.
 """
 
@@ -109,7 +111,8 @@ def _slim(f: dict[str, Any]) -> dict[str, Any]:
 
 def build(session_id: str, epoch: int, evals: list[tuple[Contract, ContractEval]], uncovered: list[Requirement],
           integrity: IntegrityReport | None, facts: list[dict[str, Any]],
-          loop_alerts: list[dict[str, Any]] | None = None, *, flag_uncovered: bool = True) -> Ledger:
+          loop_alerts: list[dict[str, Any]] | None = None, *, flag_uncovered: bool = True,
+          evidence_mode: str = "contracts", change_seq: int = 0) -> Ledger:
     tests, broader, unresolved = latest_runs(facts)
     missing: list[str] = []
     notes: list[str] = []
@@ -127,9 +130,31 @@ def build(session_id: str, epoch: int, evals: list[tuple[Contract, ContractEval]
             continue
         what = c.recipe.describe()
         missing.append(f"{c.id} ({what[:80]}): {ev.status.upper()} - {ev.reason}"[:220])
-    if not evals:
+    observed = not evals and evidence_mode == "observed"
+    if observed:
+        # Evidence-first (benchmark finding, 2026-09-25): with no contracts, what Arbiter itself
+        # observed decides. A passing test run after the last code change, no failing latest run and
+        # no weakened tests is enough; the agent isn't sent back just to write contracts.
+        fresh = [x for x in facts if x["kind"] == "test_run" and x["data"].get("runner_kind") == "test"
+                 and int(x.get("source_seq") or 0) >= change_seq]
+        latest: dict[str, dict[str, Any]] = {}
+        for x in fresh:
+            latest[str(x["subject"])] = x
+        this_task = [x for x in facts if x.get("goal_epoch") == epoch and x["kind"] in ("file_change", "test_run")]
+        if not this_task:
+            missing.append("no file changes or test runs were observed for this task")
+        elif change_seq and not fresh:
+            missing.append("no test run observed after the last code change")
+        elif any(x["status"] == "fail" for x in latest.values()):
+            missing.append("the latest test run after the last code change failed")
+        elif change_seq and not any(x["status"] == "pass" for x in latest.values()):
+            missing.append("no passing test run observed after the last code change")
+        elif change_seq:
+            uses_tests = True
+            notes.append("Verified from observed evidence: tests passed after the last code change (no contracts).")
+    elif not evals:
         missing.append("no contracts are recorded for this goal epoch, so there is nothing to verify against")
-    if flag_uncovered:
+    if flag_uncovered and not observed:
         for r in uncovered[:MAX_LIST]:
             missing.append(f"request {r.intent_id} has no contract: \"{r.text[:100]}\"")
     if uses_tests and integrity is not None and integrity.status != "ok":
