@@ -32,6 +32,11 @@ class RunnerResult:
         return asdict(self)
 
 
+RUNNER_HINT = re.compile(r"\b(?:py\.?test|unittest|jest|vitest|mocha|go test|cargo (?:test|nextest)|dotnet test|"
+                         r"tsc|eslint|ruff|mypy|tox|nox)\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|"
+                         r"\bmake\s+(?:test|check)\b", re.I)
+
+
 def _unquote(s: str) -> str:
     s = s.strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
@@ -46,10 +51,13 @@ def strip_wrappers(command: str) -> str:
         before = cmd
         for w in _WRAPPERS:
             cmd = _unquote(w.sub("", cmd))
-        if "&&" in cmd or ";" in cmd:
-            parts = [p.strip() for p in re.split(r"&&|;", cmd) if p.strip()]
+        if "&&" in cmd or ";" in cmd or "\n" in cmd or "||" in cmd:
+            parts = [p.strip() for p in re.split(r"&&|\|\||;|\n", cmd) if p.strip()]
             parts = [p for p in parts if not re.match(r"^(cd|set-location|pushd)\b", p, re.I)]
-            cmd = parts[-1] if parts else cmd
+            # `pytest -q; python cli.py x` is a test run followed by a smoke check: the runner
+            # segment is what the command verifies (seen in real Claude Code runs).
+            runners = [p for p in parts if RUNNER_HINT.search(p)]
+            cmd = runners[-1] if runners else (parts[-1] if parts else cmd)
         cmd = _PREFIXES.sub("", cmd)
         if cmd == before:
             break

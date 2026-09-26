@@ -93,7 +93,7 @@ TOOLS += [
     },
     {
         "name": "arbiter_finish_check",
-        "description": "Check the evidence before reporting the task as complete. Returns the finish ledger: which "
+        "description": "Optional: see the evidence Arbiter has for completion. Returns the finish ledger: which "
                        "contracts pass, which lack evidence, uncovered requests and test-integrity findings. "
                        "Claims passed here are recorded as the agent's assertions and never count as evidence.",
         "inputSchema": {"type": "object", "properties": {
@@ -169,9 +169,9 @@ TASK_TOOLS = {"arbiter_contract_propose": "contract_propose", "arbiter_contracts
               "arbiter_scope_change": "scope_change", "arbiter_finish_check": "finish_check"}
 
 INSTRUCTIONS = ("Arbiter records and checks this coding session locally. Its hook tool is internal. "
-                "For tasks with requirements: propose contracts with arbiter_contract_propose, quoting the user's "
-                "words verbatim, and call arbiter_finish_check before reporting completion. "
-                "Use arbiter_status to see whether Arbiter is healthy.")
+                "Completion is checked from what Arbiter observes: a passing test run after the last code change "
+                "and no weakened tests. Contracts (arbiter_contract_propose) are optional, for requirements a "
+                "test run can't show. Use arbiter_status to see what Arbiter has recorded.")
 
 
 class MCPShim:

@@ -327,3 +327,42 @@ def test_gating_hook_p95_with_gate_logic_real_daemon(home, tmp_path, client, tra
     finally:
         lifecycle.stop(home)
         proc.wait(10)
+
+
+# ------------------------------------------------------------------ evidence-first (observed mode, default)
+def _observed(h: Harness) -> None:
+    for p, t in CALC.items():
+        h.write(p, t)
+    h.prompt("Fix the addition bug in calc.py.")
+    h.baseline()
+
+
+def test_observed_mode_verifies_on_passing_run_after_last_edit():
+    with Harness(config={"completion": {"gate_mode": "block"}}) as h:
+        _observed(h)
+        h.edit("calc.py", "def add(a, b):\n    return b + a\n")
+        h.shell("python -m pytest -q; python calc.py", "1 passed in 0.01s", exit_code=0)   # compound command
+        assert h.stop("Done. The suite passes now.") == {}
+        assert h.ledger().verdict == "verified"
+
+
+def test_observed_mode_blocks_without_fresh_passing_run():
+    with Harness(config={"completion": {"gate_mode": "block"}}) as h:
+        _observed(h)
+        h.shell("pytest", "1 passed in 0.01s", exit_code=0)
+        h.edit("calc.py", "def add(a, b):\n    return b + a\n")              # edited after the last run
+        r = h.stop("Done.")
+        assert r.get("decision") == "block" and "after the last code change" in r["reason"]
+        h.shell("pytest", "1 failed in 0.01s", exit_code=1)
+        assert "failed" in h.stop("Done, really.").get("reason", "")
+
+
+def test_observed_mode_keeps_contract_rules_once_contracts_exist():
+    with Harness(config={"completion": {"gate_mode": "block"}}) as h:
+        _observed(h)
+        h.prompt("Also add a subtract function.")
+        h.propose([{"text": "fixed", "quotes": ["Fix the addition bug in calc.py"],
+                    "recipe": {"type": "test_command", "command": "pytest"}}])
+        h.edit("calc.py", "def add(a, b):\n    return b + a\n")
+        h.shell("pytest", "1 passed in 0.01s", exit_code=0)
+        assert any("has no contract" in m for m in h.ledger().missing)       # the subtract request

@@ -66,3 +66,15 @@ def test_claude_code_exit_contracts_and_snippets_on_hooks(home, tmp_path):
     finally:
         lifecycle.stop(home)
         proc.wait(10)
+
+
+@pytest.mark.parametrize(("cmd", "fp"), [
+    ('python -m pytest -q; python cli.py "  Hello,   World!! "', "pytest -q"),
+    ("cd app && python -m pytest -q", "pytest -q"),
+    ("python -m pytest -q\npython greet.py Ada --verbose", "pytest -q"),
+    ("python cli.py a; python cli.py b", "python cli.py b"),
+])
+def test_compound_commands_keep_the_runner_segment(cmd, fp):
+    from arbiter_agent.telemetry.runner_parsers.base import fingerprint
+
+    assert fingerprint(cmd) == fp
