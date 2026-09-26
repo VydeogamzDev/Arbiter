@@ -59,8 +59,10 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
     if not contents:
         if not picks:
             return None
-        return "\n".join([MAP_WORDING, f"Repo files: {repo_map(files, picks)}",
-                          f"Most likely relevant, in order: {', '.join(picks)}"])[: max_tokens * 4]
+        # Top 4 only: Sonnet 5 opened every listed file (reads 39 -> 48 with 8 listed).
+        top = picks[:4]
+        return "\n".join([MAP_WORDING, f"Repo files: {repo_map(files, top)}",
+                          f"Most likely relevant, in order: {', '.join(top)}"])[: max_tokens * 4]
     budget = max_tokens * 4
     lines = [WORDING, f"Repo files: {repo_map(files, picks)}"]
     used = sum(len(x) + 1 for x in lines)

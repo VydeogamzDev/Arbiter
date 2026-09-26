@@ -376,7 +376,7 @@ def test_context_pack_on_first_prompt_and_late_pack_on_next_tool_hook():
         calls.append(ctx["query"])
         return {"text": "[Arbiter] Task context, pre-read at this prompt", "picks": ["calc.py"], "tokens": 12}
 
-    with Harness(config={"retrieval": {"auto_context": True}}) as h:
+    with Harness(config={"retrieval": {"auto_context": True, "auto_context_pack_unknown": "full"}}) as h:
         h.engine.pack_provider = fast
         h.engine.context_provider = lambda *a: {}
         for p, t in CALC.items():

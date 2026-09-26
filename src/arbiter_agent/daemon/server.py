@@ -540,6 +540,13 @@ class Daemon:
             # The first prompt of a task may carry the context pack; it saves whole agent turns, so it
             # gets its own (still bounded) deadline instead of the gating one.
             wait_s = max(wait_s, float(self.config.get("retrieval.auto_context_deadline_ms", 2500)) / 1000.0 + 0.3)
+        auto_test = str(self.config.get("completion.auto_test", "off"))
+        if native_event in ("PostToolUse", "postToolUse") and auto_test == "after_edit":
+            # Arbiter's own test run after an edit replaces an agent call; it gets its own bounded wait.
+            wait_s = max(wait_s, float(self.config.get("completion.auto_test_budget_s", 3.0))
+                         + float(self.config.get("completion.auto_test_settle_s", 0.2)) + 0.4)
+        if native_event in ("Stop", "stop") and auto_test in ("after_edit", "at_stop"):
+            wait_s = max(wait_s, float(self.config.get("completion.auto_test_stop_budget_s", 4.0)) + 0.5)
         deadline = Deadline(wait_s)
         try:
             payload, event_hint = adapt_inbound(client, payload, event_hint)   # M5 dialects -> canonical shape

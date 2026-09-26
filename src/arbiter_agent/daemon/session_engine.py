@@ -25,7 +25,9 @@ from typing import Any
 
 from arbiter_agent.clients import event_dedupe
 from arbiter_agent.clients.event_normalizer import NormalizedEvent, canonical_bytes, hook_event_type
-from arbiter_agent.completion import claim_detection, evidence_ledger, gate
+from arbiter_agent.completion import auto_test, claim_detection, evidence_ledger, gate
+from arbiter_agent.completion import verify_runner as vr
+from arbiter_agent.completion.auto_test import AutoTester
 from arbiter_agent.completion.breakers import Breakers
 from arbiter_agent.completion.evidence_grades import ContractEval, EvalContext, evaluate
 from arbiter_agent.concurrency import Deadline, EpochCancel, Priority, WorkQueue
@@ -111,6 +113,12 @@ class SessionEngine:
         self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
         self.pack_provider: Callable[[str, dict[str, Any], float, int], dict[str, Any]] | None = None
         self._late_packs: dict[str, tuple[Any, str, float]] = {}   # sid -> (future, query, started)
+        self.auto_tester = AutoTester(config)   # completion.auto_test: Arbiter runs the tests itself
+        self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
+        self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
+        self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
+        self._last_model: dict[str, str] = {}       # client -> most recent model seen (predicts new sessions)
+        self._transcripts: dict[str, str] = {}      # sid -> transcript path from its hooks
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -140,6 +148,7 @@ class SessionEngine:
         return self
 
     def stop(self) -> None:
+        self.auto_tester.stop()
         self._stop.set()
         self._wake.set()
         if self._thread:
@@ -713,9 +722,10 @@ class SessionEngine:
         name = payload.get("hook_event_name") or event_hint
         etype = hook_event_type(str(name) if name else None)
         native = payload.get("session_id")
-        if native and etype == "post_tool" and f"{client}:{native}" in self._late_packs:
-            text = self._take_late_pack(f"{client}:{native}")
-            return ui_status.hook_context(str(name), text) if text else {}
+        if native:
+            self._note_session(client, f"{client}:{native}", payload)
+        if native and etype == "post_tool":
+            return self.on_tool_hook(client, f"{client}:{native}", payload, str(name), deadline)
         if not native or etype not in ("stop", "user_prompt", "session_start"):
             return {}
         sid = f"{client}:{native}"
@@ -755,6 +765,8 @@ class SessionEngine:
             ledger = None
             if breaker is None and claim.gated:
                 _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
+                if ledger is not None and self._auto_test_at_stop(sid, ledger, deadline):
+                    _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
             out = gate.decide(mode=mode, claim=claim, ledger=ledger, stop_blocks_used=int(st["stop_blocks"]),
                               max_blocks=max_blocks, unavailable_reason=breaker)
             self.record_ledger(sid, ledger, trigger="stop_hook", claim=claim.claim, verdict=out.verdict, mode=mode,
@@ -893,6 +905,10 @@ class SessionEngine:
                      max(0.0, deadline.remaining() - 0.1))
         if budget <= 0.02:
             return None
+        client = sid.split(":", 1)[0]
+        mode = self._pack_mode(client, sid)
+        if mode == "off":
+            return None
         query = last[-1].text[:2000]
         qctx = {"query": query, "misses": len(self.misses.recent(sid))}
         pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 2500))
@@ -920,7 +936,19 @@ class SessionEngine:
         finally:
             ex.shutdown(wait=False)
         if use_pack:
-            return self._pack_text(sid, res, query)
+            if mode is None:
+                unknown = str(self.config.get("retrieval.auto_context_pack_unknown", "defer"))
+                if unknown == "defer":
+                    # The model isn't known at the first prompt (Claude Code's prompt hook doesn't say):
+                    # hold the pack and pick full or map at the first tool hook, once the transcript
+                    # shows the model.
+                    done: cf.Future[dict[str, Any]] = cf.Future()
+                    done.set_result(res)
+                    self._late_packs[sid] = (done, query, time.monotonic())
+                    self.stats["auto_context_deferred"] = self.stats.get("auto_context_deferred", 0) + 1
+                    return None
+                mode = unknown
+            return self._pack_text(sid, res, query, mode)
         pins = [p["path"] for p in res.get("pins", [])]
         ranked = [r["path"] for r in res.get("ranked", [])]
         if not pins and int(res.get("k") or 99) > 6:
@@ -934,7 +962,11 @@ class SessionEngine:
         self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
         return text[:cap]
 
-    def _pack_text(self, sid: str, res: dict[str, Any], query: str) -> str | None:
+    def _pack_text(self, sid: str, res: dict[str, Any], query: str, mode: str | None = "full") -> str | None:
+        if mode == "off":
+            return None
+        if mode == "map" and res.get("map_text"):
+            res = {**res, "text": res["map_text"], "tokens": (len(str(res["map_text"])) + 3) // 4}
         if not res.get("text"):
             return None
         self.misses.surfaced(sid, list(res.get("picks") or []), query)
@@ -944,7 +976,8 @@ class SessionEngine:
         return str(res["text"])
 
     def _take_late_pack(self, sid: str) -> str | None:
-        """A pack that missed the prompt hook, once it's ready (dropped after 60 s or a new task)."""
+        """A pack that missed the prompt hook (or waited for the model), once it's ready (dropped after
+        60 s or a new task)."""
         fut, query, started = self._late_packs[sid]
         if not fut.done():
             if time.monotonic() - started > 60:
@@ -955,7 +988,126 @@ class SessionEngine:
             res = fut.result(timeout=0)
         except Exception:
             return None
-        return self._pack_text(sid, res, query)
+        mode = self._pack_mode(sid.split(":", 1)[0], sid)
+        if mode is None:
+            fallback = str(self.config.get("retrieval.auto_context_pack_default_mode", "full"))
+            mode = fallback if fallback in ("full", "map", "off") else "full"
+        return self._pack_text(sid, res, query, mode)
+
+    # ------------------------------------------------------------------ models (pack choice)
+    def _note_session(self, client: str, sid: str, payload: dict[str, Any]) -> None:
+        model = payload.get("model")
+        if isinstance(model, str) and model:
+            self._models[sid] = model
+            self._last_model[client] = model
+        tp = payload.get("transcript_path")
+        if isinstance(tp, str) and tp:
+            self._transcripts[sid] = tp
+
+    def _session_model(self, client: str, sid: str) -> str | None:
+        if sid in self._models:
+            return self._models[sid]
+        path = self._transcripts.get(sid)
+        model = transcript_model(path) if path else None
+        if model:
+            self._models[sid] = model
+            self._last_model[client] = model
+        return model
+
+    def _pack_mode(self, client: str, sid: str) -> str | None:
+        """full | map | off for this session's model; None while the model is unknown. Measured
+        2026-09-26: Opus saves 14% with file contents in the pack (it skips reading them) and nothing
+        with a map only; Sonnet 5 thinks 53% longer with contents and is near break-even with a map."""
+        model = self._session_model(client, sid) or self._last_model.get(client)
+        if not model:
+            return None
+        import fnmatch
+
+        for pattern, mode in (self.config.get("retrieval.auto_context_pack_models") or {}).items():
+            if fnmatch.fnmatch(model.lower(), str(pattern).lower()):
+                return str(mode)
+        return str(self.config.get("retrieval.auto_context_pack_default_mode", "full"))
+
+    # ------------------------------------------------------------------ auto tests
+    def on_tool_hook(self, client: str, sid: str, payload: dict[str, Any], name: str,
+                     deadline: Deadline) -> dict[str, Any]:
+        """PostToolUse: a held-back context pack, and the result of Arbiter's own test run after edits."""
+        parts: list[str] = []
+        if sid in self._late_packs:
+            text = self._take_late_pack(sid)
+            if text:
+                parts.append(text)
+        try:
+            tested = self._auto_test_after_tool(sid, payload, deadline)
+        except Exception:
+            self.stats["errors"] += 1
+            tested = None
+        if tested:
+            parts.append(tested)
+        return ui_status.hook_context(name, "\n".join(parts)) if parts else {}
+
+    def _repo_root(self, sid: str, payload: dict[str, Any] | None = None) -> str | None:
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+        finally:
+            rc.close()
+        root = self._root(st) if st else None
+        if not root and payload and isinstance(payload.get("cwd"), str):
+            root = payload["cwd"]
+        return root
+
+    def _auto_test_after_tool(self, sid: str, payload: dict[str, Any], deadline: Deadline) -> str | None:
+        if self.auto_tester.mode() != "after_edit":
+            return None
+        tool = str(payload.get("tool_name") or "").lower()
+        tin = payload.get("tool_input")
+        root = self._repo_root(sid, payload)
+        if not root:
+            return None
+        if tool in facts.EDIT_TOOLS:
+            paths = facts.edit_paths(tool, tin)
+            if not any(auto_test.is_code_path(x) and _inside(x, root) for x in paths):
+                return None
+            self._test_pending[sid] = root
+            time.sleep(float(self.config.get("completion.auto_test_settle_s", 0.2)))   # let parallel edits land
+        elif tool in facts.SHELL_TOOLS and _runs_tests(facts._shell_command(tin)):
+            self._test_pending.pop(sid, None)          # the agent ran the tests itself
+            return None
+        if sid not in self._test_pending:
+            return None
+        budget = min(float(self.config.get("completion.auto_test_budget_s", 3.0)), deadline.remaining() - 0.2)
+        out = self.auto_tester.run(root, max(0.0, budget))
+        if out is None or self.auto_tester.ready(root) is not out:
+            return None                                # still running, or the files moved on: later hook
+        self._test_pending.pop(sid, None)
+        if self._test_announced.get(sid) == out.state:
+            return None
+        self._test_announced[sid] = out.state
+        self._record_auto_test(sid, out)
+        return out.summary()
+
+    def _auto_test_at_stop(self, sid: str, ledger: Any, deadline: Deadline) -> bool:
+        """A completion claim with no fresh test evidence: run the tests instead of sending the agent
+        back. True if a result was recorded."""
+        if self.auto_tester.mode() not in ("after_edit", "at_stop"):
+            return False
+        if not any("test run" in str(m) for m in ledger.missing):
+            return False
+        root = self._repo_root(sid)
+        if not root:
+            return False
+        budget = min(float(self.config.get("completion.auto_test_stop_budget_s", 4.0)), deadline.remaining() - 0.3)
+        out = self.auto_tester.run(root, max(0.0, budget), at_stop=True)
+        if out is None or self.auto_tester.ready(root) is not out:
+            return False
+        self._record_auto_test(sid, out)
+        return True
+
+    def _record_auto_test(self, sid: str, out: Any) -> None:
+        fact = vr.result_fact(out.result)
+        fact["data"]["via"] = "auto_test"
+        self.submit_verification(sid, [fact], "auto_test")
 
     # ------------------------------------------------------------------ tool API (MCP + CLI)
     def resolve_session(self, params: dict[str, Any]) -> str | None:
@@ -1323,3 +1475,41 @@ class SessionEngine:
     def summary(self) -> dict[str, Any]:
         return {"stats": dict(self.stats), "background": dict(self.bg.stats), "backlog": self.bg.backlog,
                 "breakers": self.breakers.snapshot()}
+
+
+def _inside(path: str, root: str) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except (ValueError, OSError):
+        return not Path(path).is_absolute()
+
+
+def _runs_tests(command: str) -> bool:
+    from arbiter_agent.telemetry.runner_parsers.base import RUNNER_HINT
+
+    return bool(RUNNER_HINT.search(command or ""))
+
+
+def transcript_model(path: str, tail_bytes: int = 262144) -> str | None:
+    """The model of the latest assistant message in a Claude Code transcript (read from the tail)."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - tail_bytes))
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if '"assistant"' not in line or '"model"' not in line:
+            continue
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if o.get("type") == "assistant":
+            m = (o.get("message") or {}).get("model")
+            if isinstance(m, str) and m and not m.startswith("<"):
+                return m
+    return None

@@ -85,7 +85,9 @@ def test_fake_host_all_transports(daemon, tmp_path, client, transport):
     for c in h.calls:
         extra = (c.response.get("hookSpecificOutput") or {}).get("additionalContext", "")
         assert "decision" not in c.response and "continue" not in c.response, c.response
-        assert c.response == {} or (c.event == "UserPromptSubmit" and "[Arbiter] Task context" in extra), c.response
+        # (Claude Code: the model isn't known at the prompt, so the pack comes with the first tool hook.)
+        assert c.response == {} or (c.event in ("UserPromptSubmit", "PostToolUse")
+                                    and "[Arbiter] Task context" in extra), c.response
     st = status(home)
     assert st["events"] == len(h.calls) == 6
     assert st["ingest"].get("stored") == 6

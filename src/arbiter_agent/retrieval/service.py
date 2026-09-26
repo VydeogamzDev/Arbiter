@@ -165,7 +165,8 @@ class RetrievalService:
 
         text = context_pack.build(root, files, picks, read, max_tokens,
                                   contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)))
-        return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text,
+        map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False)
+        return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})
 
     def status(self, cwd: str) -> dict[str, Any]:

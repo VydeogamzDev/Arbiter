@@ -140,6 +140,13 @@ retrieval:
   auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
   auto_context_pack_tokens: 2500   # pre-read task pack: repo map, top files + their imports and tests; 0 = names only
   auto_context_pack_contents: true # false: map-only pack (repo map + ranked likely files, no file contents)
+  auto_context_pack_models:        # pack per model (fnmatch on the model id): full | map | off. Measured: Opus
+    "*opus*": full                 # saves 14% with contents; Sonnet 5 thinks 53% longer with them, ~even with a map
+    "*sonnet*": map
+    "*haiku*": map
+  auto_context_pack_default_mode: full   # models not in the table
+  auto_context_pack_unknown: defer       # model unknown at the first prompt (Claude Code): defer to the first tool
+                                         # hook, when the transcript shows it | full | map | off
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
 
 review:
@@ -156,6 +163,14 @@ completion:
   gate_only_on_completion_claims: true
   max_stop_blocks_per_epoch: 3  # block mode only
   contracts_proposed_by: host_agent
+  auto_test: after_edit          # Arbiter runs the detected test command itself: after_edit (result goes back
+                                 # with the edit's hook, and at a claim with no fresh run) | at_stop | off
+  auto_test_command: null        # override the detected command (pytest, npm test, cargo test, go test)
+  auto_test_budget_s: 3.0        # wait this long in the edit's hook; later results come with a later hook
+  auto_test_stop_budget_s: 4.0   # at a completion claim
+  auto_test_timeout_s: 120       # kill a run after this
+  auto_test_max_s: 60.0          # a suite slower than this is not auto-run after edits again
+  auto_test_settle_s: 0.2        # pause after an edit so parallel edits land before the run
   evidence_mode: observed        # observed: with no contracts, a passing test run after the last code change
                                 # (and no weakened tests) verifies; contracts: always require contracts
   require_verbatim_quote_provenance: true

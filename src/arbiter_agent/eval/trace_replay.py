@@ -43,7 +43,11 @@ class Harness:
             if self._own:
                 shutil.rmtree(self.dir, ignore_errors=True)
             raise RuntimeError(f"migration failed: {res.error}")
-        self.config = build_config(config or {})
+        cfg = dict(config or {})
+        # Replays measure the gate's rules on scripted traces: Arbiter running the fixture repos' tests
+        # itself would change what they measure, so auto-test is off unless a trace asks for it.
+        cfg["completion"] = {"auto_test": "off", **(cfg.get("completion") or {})}
+        self.config = build_config(cfg)
         self.writer = Writer(self.db).start()
         self.reducer = Reducer()
         self.scope = ProjectScope(self.dir / "store" / "scope.json")
