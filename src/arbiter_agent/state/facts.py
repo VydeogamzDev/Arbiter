@@ -34,9 +34,23 @@ SHELL_WRITE = re.compile(
     r"\bperl\s+-p?i|\bgit\s+(?:checkout|restore|reset|apply|stash|mv|rm|am|cherry-pick|revert|merge|rebase|pull)\b|"
     r"(?<![<>=\d-])>{1,2}\s*[^\s&|>]|\b(?:Set-Content|Add-Content|Out-File|Remove-Item|New-Item|Move-Item|"
     r"Copy-Item|Rename-Item|Clear-Content)\b|\bnpm\s+(?:install|i|uninstall|update)\b|\bpip\s+install\b|"
-    r"\bpython\S*\s+-c\b|\bnode\s+-e\b|\bdotnet\s+new\b|\bcargo\s+(?:add|fix)\b|\bprettier\s+--write\b|"
+    r"\bdotnet\s+new\b|\bcargo\s+(?:add|fix)\b|\bprettier\s+--write\b|"
     r"\bblack\b|\bruff\s+(?:format|check\s+--fix)\b|\beslint\s+--fix\b|\bgo\s+(?:fmt|mod\s+tidy)\b",
     re.I)
+# Inline interpreter code (python -c, node -e) counts as a write only when it calls something that
+# writes. Treating every one-liner as a write made each verification snippet stale all earlier
+# test evidence (seen in real Claude Code benchmark runs, 2026-09-25).
+INLINE_CODE = re.compile(r"\b(?:python\S*|py)\s+(?:-\w+\s+)*-c\b|\bnode\s+(?:-\w+\s+)*(?:-e|--eval)\b", re.I)
+INLINE_WRITE = re.compile(
+    r"\bopen\([^)]*['\"][^'\"]*[wax+]|\.write(?:_text|_bytes|lines)?\(|\bos\.(?:remove|unlink|rename|replace|"
+    r"makedirs|mkdir|rmdir|system|truncate)|\bshutil\.|\.(?:unlink|rename|replace|mkdir|rmdir|touch)\(|"
+    r"\bsubprocess\b|\bPopen\b|writeFile|appendFile|\bfs\.(?:write|append|unlink|rm|rename|mkdir|copy)|child_process",
+    re.I)
+# A shell wrapper runs its quoted script, so redirects inside those quotes are real.
+SHELL_WRAPPER = re.compile(r"\b(?:bash|sh|zsh|pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-\w+\s+)*"
+                           r"(?:-c|-command|/c)\b", re.I)
+QUOTED = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'[^']*'")
+
 UNAVAILABLE = re.compile(r"command not found|is not recognized as (?:an internal or external command|the name of a "
                          r"cmdlet)|No module named (?:pytest|unittest)|executable file not found|ENOENT", re.I)
 DOC_PATH = re.compile(r"\.(md|mdx|rst|txt|adoc)$|(^|/)(docs?|documentation)/|(^|/)(CHANGELOG|LICENSE|AUTHORS)[^/]*$",
@@ -101,6 +115,13 @@ def edit_paths(tool_name: str, tool_input: Any) -> list[str]:
     return seen[:50]
 
 
+def shell_writes(command: str) -> bool:
+    """Whether a shell command may change files (conservative outside quoted inline code)."""
+    if SHELL_WRITE.search(command if SHELL_WRAPPER.search(command) else QUOTED.sub('""', command)):
+        return True
+    return bool(INLINE_CODE.search(command) and INLINE_WRITE.search(command))
+
+
 def shell_result(command: str, output: str, *, exit_code: int | None, is_error: bool | None, interrupted: bool,
                  origin: str, tool_use_id: str | None) -> list[FactDraft]:
     fp = fingerprint(command)
@@ -125,7 +146,7 @@ def shell_result(command: str, output: str, *, exit_code: int | None, is_error: 
     else:
         status = "unknown" if known_exit is None or interrupted else ("pass" if known_exit == 0 else "fail")
         out.append(FactDraft("command_run", origin, fp, status, data, tool_use_id))
-        if SHELL_WRITE.search(command):
+        if shell_writes(command):
             out.append(FactDraft("file_change", origin, "<shell>", "n/a", {"via": "shell", "command": fp[:200]},
                                  f"{tool_use_id}:w" if tool_use_id else None))
     return out

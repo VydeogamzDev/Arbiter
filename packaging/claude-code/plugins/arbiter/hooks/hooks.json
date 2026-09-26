@@ -66,6 +66,23 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "arbiter",
+            "args": [
+              "hook",
+              "claude_code",
+              "PostToolUseFailure"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

@@ -11,9 +11,9 @@ from typing import Any
 
 from arbiter_agent.daemon.auth import HOOK_TOKEN_HEADER
 
-EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop", "PreCompact",
-          "SessionEnd"]
-TOOL_EVENTS = {"PreToolUse", "PostToolUse"}
+EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop",
+          "PreCompact", "SessionEnd"]   # PostToolUseFailure carries failed tools, incl. non-zero shell exits
+TOOL_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure"}
 HOOK_TIMEOUT_S = 5
 URL_MARK = "/hook/claude_code/"
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-ALL_HOOKS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop",
-             "PreCompact", "SessionEnd")
+ALL_HOOKS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop",
+             "SubagentStop", "PreCompact", "SessionEnd")
 
 
 @dataclass(frozen=True)

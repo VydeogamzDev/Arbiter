@@ -326,10 +326,14 @@ class SessionEngine:
             if not flags.get("hook_tools"):
                 flags["hook_tools"] = True
                 self._save(conn, st, flags=flags)
+            resp = payload.get("tool_response")
             if etype == "post_tool_failure":
-                resp = payload.get("tool_response")
                 payload = {**payload, "tool_response": {**(resp if isinstance(resp, dict) else {"output": resp}),
                                                         "is_error": True}}
+            elif str(r["client_id"]) == "claude_code" and isinstance(resp, dict) and "is_error" not in resp:
+                # Claude Code fires PostToolUse only after a tool succeeds (failures, including a
+                # non-zero shell exit, go to PostToolUseFailure), so a PostToolUse result means exit 0.
+                payload = {**payload, "tool_response": {**resp, "is_error": False}}
             drafts = facts.from_hook("post_tool", payload)
             bg += self._store_facts(conn, st, drafts, seq)
         elif etype == "transcript.tool_call":
