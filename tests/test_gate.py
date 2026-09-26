@@ -419,3 +419,14 @@ def test_scratch_file_outside_repo_does_not_stale_tests(tmp_path):
         assert h.stop("Done. The suite passes.") == {}
         h.edit("calc.py", "def add(a, b):\n    return a + b\n")          # a real in-repo change still counts
         assert h.stop("Done again.").get("decision") == "block"
+
+
+def test_map_only_pack_has_no_file_contents(tmp_path):
+    from arbiter_agent.retrieval import context_pack
+
+    files = ["app/calc.py", "tests/test_calc.py", "README.md"]
+    full = context_pack.build(tmp_path, files, ["app/calc.py"], lambda p: "def add(a, b):\n    return a + b\n", 2500)
+    lite = context_pack.build(tmp_path, files, ["app/calc.py", "tests/test_calc.py"], lambda p: "SECRET BODY", 2500,
+                              contents=False)
+    assert "def add" in full and "Tests run with" not in full
+    assert "SECRET BODY" not in lite and "app/calc.py, tests/test_calc.py" in lite and "Repo files:" in lite

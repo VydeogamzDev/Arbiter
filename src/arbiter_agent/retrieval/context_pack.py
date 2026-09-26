@@ -49,8 +49,18 @@ def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_
     return seen[:limit]
 
 
+MAP_WORDING = "[Arbiter] Task context at this prompt (snapshot):"
+
+
 def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], str | None],
-          max_tokens: int) -> str | None:
+          max_tokens: int, contents: bool = True) -> str | None:
+    """``contents=False`` gives the map-only pack: the repo map and the ranked likely-relevant files,
+    without file contents (models that re-read files before editing gain nothing from contents)."""
+    if not contents:
+        if not picks:
+            return None
+        return "\n".join([MAP_WORDING, f"Repo files: {repo_map(files, picks)}",
+                          f"Most likely relevant, in order: {', '.join(picks)}"])[: max_tokens * 4]
     budget = max_tokens * 4
     lines = [WORDING, f"Repo files: {repo_map(files, picks)}"]
     used = sum(len(x) + 1 for x in lines)

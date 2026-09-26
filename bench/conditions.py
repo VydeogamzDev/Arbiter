@@ -46,6 +46,9 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full", "everything: hooks, MCP tools, completion gate in block mode, auto file context, "
                       "status summaries, encoder sensor in shadow",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True),
+    Condition("full_map", "full, but the context pack is map-only (repo map + ranked likely files, no contents)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_pack_contents": False}})),
     # Ablations: one subsystem at a time.
     # The gate checks contracts the agent records through the MCP tools, so it needs both halves.
     Condition("gate_only", "completion gate in block mode: hooks + MCP contract tools, no injected context",

@@ -138,7 +138,8 @@ retrieval:
   auto_context: true            # pre-read task pack at the first prompt of a new task (bounded); on by default
                                 # since it cut cost 26% and turns 38% on the held-out benchmark (bench/)
   auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
-  auto_context_pack_tokens: 2500   # pre-read task pack: repo map, test command, top files + their imports; 0 = names only
+  auto_context_pack_tokens: 2500   # pre-read task pack: repo map, top files + their imports and tests; 0 = names only
+  auto_context_pack_contents: true # false: map-only pack (repo map + ranked likely files, no file contents)
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
 
 review:
