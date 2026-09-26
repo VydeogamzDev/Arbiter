@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(not (harness.TASKS / "tz_fix" / "task.yaml").is_
 
 def _args(agent: str) -> argparse.Namespace:
     return argparse.Namespace(agent=agent, model=harness.MODEL, force=True, keep_workspaces=False, encoder=None,
-                              effort=None, warmup=False,
+                              effort=None, warmup=False, first_session=True,
                               budget=1.0, timeout=60)
 
 

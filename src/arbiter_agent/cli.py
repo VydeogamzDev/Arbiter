@@ -207,6 +207,19 @@ def cmd_retention(a: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_slim(a: argparse.Namespace) -> int:
+    from arbiter_agent.setup import slim
+
+    paths = _paths()
+    if a.action == "on":
+        print(slim.slim_on(paths, a.profile, dry_run=a.dry_run))
+    elif a.action == "off":
+        print(slim.slim_off(paths))
+    else:
+        print(slim.status(paths))
+    return 0
+
+
 def cmd_setup(a: argparse.Namespace) -> int:
     from arbiter_agent.clients.registry import load_registry
     from arbiter_agent.setup.setup import SetupOptions, print_snippet, run_setup
@@ -337,6 +350,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true")
     s.add_argument("--quick", action="store_true", help="skip live MCP/HTTP round trips")
     s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("slim", help="turn off Claude Code features coding sessions don't use (smaller context "
+                                    "on every call; opt-in, reversible)")
+    s.add_argument("action", nargs="?", choices=["status", "on", "off"], default="status")
+    s.add_argument("--profile", choices=["standard", "lean"], default="standard")
+    s.add_argument("--dry-run", action="store_true", help="show what would change")
+    s.set_defaults(fn=cmd_slim)
 
     s = sub.add_parser("uninstall", help="remove exactly what setup added")
     s.add_argument("--clients")

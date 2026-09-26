@@ -147,7 +147,12 @@ class ArbiterRun:
 
         token = (read_token(self.paths.hook_token_file) or b"").decode()
         groups = ch.hook_groups(int(self.port() or 0), token)
-        return {"hooks": {ev: [g] for ev, g in groups.items() if ev in self.cond.hooks}}
+        out: dict[str, Any] = {"hooks": {ev: [g] for ev, g in groups.items() if ev in self.cond.hooks}}
+        if self.cond.slim:
+            from arbiter_agent.setup.slim import settings_for
+
+            out.update(settings_for(self.cond.slim))
+        return out
 
     def mcp_config(self) -> dict[str, Any]:
         from arbiter_agent.clients.claude_code import hooks as ch

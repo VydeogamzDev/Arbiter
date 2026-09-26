@@ -23,6 +23,7 @@ class Condition:
     mcp: bool = False
     config: dict[str, Any] = field(default_factory=dict)
     encoder: bool = False           # load the tier-0 ONNX encoder (sensor shadow + semantic tool search)
+    slim: str | None = None         # arbiter slim profile applied to the Claude settings (standard | lean)
 
     @property
     def uses_arbiter(self) -> bool:
@@ -46,6 +47,8 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full", "everything: hooks, MCP tools, completion gate in block mode, auto file context, "
                       "status summaries, encoder sensor in shadow",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True),
+    Condition("full_slim", "full, plus `arbiter slim` lean: Claude Code features coding doesn't use are off",
+              hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True, slim="lean"),
     Condition("full_map", "full, but the context pack is map-only (repo map + ranked likely files, no contents)",
               hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_pack_contents": False}})),
