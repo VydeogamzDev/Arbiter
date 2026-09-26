@@ -36,6 +36,17 @@ CODE_SUFFIXES = {".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".
                  ".json", ".yaml", ".yml"}
 
 
+def project_python(root: Path) -> str:
+    """The repo's own interpreter when it has a virtualenv (.venv, venv, env), else plain `python`.
+    Found on a real install: the system Python couldn't import the project under test."""
+    for d in (".venv", "venv", "env"):
+        for rel in ("Scripts/python.exe", "bin/python"):
+            p = root / d / rel
+            if p.is_file():
+                return f'"{p}"' if " " in str(p) else str(p)
+    return "python"
+
+
 def detect_command(root: Path) -> str | None:
     """The repo's plain test command, if it has an obvious one."""
     try:
@@ -46,7 +57,7 @@ def detect_command(root: Path) -> str | None:
         n.startswith("test_") and n.endswith(".py") for n in names)
     if has_py_tests and (names & {"pytest.ini", "conftest.py", "pyproject.toml", "setup.cfg", "tox.ini"}
                          or any(n.endswith(".py") for n in names) or (root / "tests").is_dir()):
-        return "python -m pytest -q"
+        return f"{project_python(root)} -m pytest -q"
     if "package.json" in names:
         try:
             scripts = json.loads((root / "package.json").read_text("utf-8")).get("scripts") or {}

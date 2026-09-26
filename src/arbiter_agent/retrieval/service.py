@@ -163,9 +163,18 @@ class RetrievalService:
                 return None
             return self._redact(raw.decode("utf-8", errors="replace"))[0]
 
+        note = None
+        if str(self.config.get("completion.auto_test", "off")) == "after_edit":
+            from arbiter_agent.completion.auto_test import detect_command
+
+            cmd = self.config.get("completion.auto_test_command") or detect_command(root)
+            if cmd:
+                note = (f"Tests: Arbiter runs `{cmd}` after each code edit and adds the result to that edit's "
+                        "tool output.")
         text = context_pack.build(root, files, picks, read, max_tokens,
-                                  contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)))
-        map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False)
+                                  contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)),
+                                  test_note=note)
+        map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False, test_note=note)
         return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})
 

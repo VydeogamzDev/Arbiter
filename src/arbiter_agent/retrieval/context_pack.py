@@ -53,18 +53,23 @@ MAP_WORDING = "[Arbiter] Task context at this prompt (snapshot):"
 
 
 def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], str | None],
-          max_tokens: int, contents: bool = True) -> str | None:
+          max_tokens: int, contents: bool = True, test_note: str | None = None) -> str | None:
     """``contents=False`` gives the map-only pack: the repo map and the ranked likely-relevant files,
-    without file contents (models that re-read files before editing gain nothing from contents)."""
+    without file contents (models that re-read files before editing gain nothing from contents).
+
+    ``test_note`` says that Arbiter runs the tests itself after each code edit (completion.auto_test).
+    Without it, Opus 5.5 still issued its own test run in the same turn as an edit, before it could
+    see Arbiter's result (5 redundant runs in 10 held-out tasks)."""
     if not contents:
         if not picks:
             return None
         # Top 4 only: Sonnet 5 opened every listed file (reads 39 -> 48 with 8 listed).
         top = picks[:4]
-        return "\n".join([MAP_WORDING, f"Repo files: {repo_map(files, top)}",
-                          f"Most likely relevant, in order: {', '.join(top)}"])[: max_tokens * 4]
+        head = [MAP_WORDING, f"Repo files: {repo_map(files, top)}",
+                f"Most likely relevant, in order: {', '.join(top)}"]
+        return "\n".join(head + ([test_note] if test_note else []))[: max_tokens * 4]
     budget = max_tokens * 4
-    lines = [WORDING, f"Repo files: {repo_map(files, picks)}"]
+    lines = [WORDING, f"Repo files: {repo_map(files, picks)}"] + ([test_note] if test_note else [])
     used = sum(len(x) + 1 for x in lines)
     shown: list[str] = []
     for p in picks:

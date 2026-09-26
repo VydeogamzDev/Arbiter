@@ -1110,6 +1110,12 @@ class SessionEngine:
             return None
         self._test_announced[sid] = out.state
         self._record_auto_test(sid, out)
+        if out.result.status == "unknown":
+            # A run that couldn't produce a result (collection or environment error) is said once per
+            # session, not after every edit (seen on a real install: the same ImportError each time).
+            if self._test_announced.get(f"{sid}#unknown"):
+                return None
+            self._test_announced[f"{sid}#unknown"] = "1"
         return out.summary()
 
     def _auto_test_at_stop(self, sid: str, ledger: Any, deadline: Deadline) -> bool:

@@ -160,3 +160,22 @@ def test_suite_that_times_out_is_never_auto_run_again(tmp_path):
     (tmp_path / "a.py").write_text("x = 2\n")
     assert t.run(tmp_path, 10, at_stop=True) is None        # never again, not even at a claim
     t.stop()
+
+
+def test_pack_says_arbiter_runs_the_tests(tmp_path):
+    from arbiter_agent.retrieval import context_pack
+
+    note = ("Tests: Arbiter runs `python -m pytest -q` after each code edit and adds the result to that edit's "
+            "tool output.")
+    full = context_pack.build(tmp_path, ["a.py"], ["a.py"], lambda p: "x = 1\n", 2500, test_note=note)
+    lite = context_pack.build(tmp_path, ["a.py"], ["a.py"], lambda p: "x = 1\n", 2500, contents=False, test_note=note)
+    assert note in full and note in lite
+
+
+def test_detect_command_uses_the_project_virtualenv(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "app.py").write_text("x = 1\n")
+    venv_py = tmp_path / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_text("")
+    assert detect_command(tmp_path) == f"{venv_py} -m pytest -q"
