@@ -87,7 +87,26 @@ The two models need opposite settings: Opus's whole gain comes from the file con
 
 Sonnet also runs the tests about once more per task whenever the repo map lists test files. That's arguably correct verification, so the map doesn't hide them.
 
-The next step is choosing the pack per model. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
+### Retest after auto-test and the per-model pack (2026-09-26, 1 rep, fair harness)
+
+These runs used Arbiter's own test runs after edits and at claims, plus the pack chosen per model. Every run started a fresh daemon, so the model was always unknown at the first prompt and the pack waited for the first tool hook. That penalty is fixed in `edf9a1c`: the model is remembered, and the map goes out at the prompt with contents following.
+
+| model | suite | cost | turns | wall | success |
+|---|---|---|---|---|---|
+| Opus 5.5 | held-out (10) | **-9%** [95% CI -16% to -2%] | -24% | -6% | 10/10 both |
+| Opus 5.5 | large-repo (5) | **-9%** [-18% to -0%] | -25% | -15% | 5/5 both |
+| Sonnet 5 | held-out (10) | **-16%** [-29% to -3%] | -31% | -8% | 10/10 both |
+| Sonnet 5 | large-repo (5) | **-25%** [-54% to +0%] | -14% | -24% | 5/5 both |
+
+What moved (`bench.analyze`):
+- Agent test runs fell (Sonnet 8 -> 0 and Opus 13 -> 7 on held-out) because Arbiter's results came back with the edits.
+- Sonnet's extra shell checks fell 7 -> 2.
+- Sonnet went from +11% to -16% on held-out.
+- Opus lost some of its earlier orientation saving (orientation 11 -> 9, versus 11 -> 2 when the pack reached the first prompt). That's the deferral penalty fixed in `edf9a1c`.
+
+`lr_setting_rename`'s hidden test was fixed after the run: it only accepted the deprecation warning at lookup, and the prompt also allows it at `configure()`. All four runs were rescored, and it passes in all of them.
+
+The per-model pack decision is also in `edf9a1c`. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
 
 Held-out v1 in detail:
 - 9 of 10 tasks were cheaper and one (`mailer_kwonly`) was even.
