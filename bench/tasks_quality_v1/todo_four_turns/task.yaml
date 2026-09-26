@@ -1,0 +1,21 @@
+id: todo_four_turns
+category: scope_change
+prompts:
+- 'In todo.py, add add(items, title), which appends {"title": title, "done": False} to the list and returns the
+  new item, and pending(items), which returns the items not done, in insertion order.'
+- 'Give items a priority: add() takes priority="medium" (one of "low", "medium", "high"; anything else is a ValueError),
+  and pending() sorts by priority, high first, keeping insertion order within a priority.'
+- Rename the priority levels to "low", "normal" and "urgent". add() must still accept the old names (medium means
+  normal, high means urgent) but store the new ones.
+- Finally, add to_json(items), which returns a JSON list of the pending items in the same order as pending(), and
+  complete(items, title), which marks the first matching pending item done and returns True, or returns False if
+  none matches. Everything from before must keep working.
+requirements:
+  add_defaults: test_add_defaults
+  pending_order: test_pending_order
+  old_names_mapped: test_old_names_mapped
+  invalid_priority: test_invalid_priority
+  to_json_order: test_to_json_order
+  complete: test_complete
+  complete_missing: test_complete_missing
+notes: ''

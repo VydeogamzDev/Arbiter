@@ -1,0 +1,32 @@
+id: pricing_rules
+category: requirements
+prompts:
+- "Implement price_order(order) in pricing/engine.py. An order looks like\n{\"region\": \"CA\", \"customer\": {\"\
+  type\": \"retail\" or \"business\", \"tax_exempt\": False},\n \"lines\": [{\"sku\": \"A1\", \"category\": \"hardware\"\
+  , \"unit_price\": \"19.99\", \"qty\": 2}, ...],\n \"coupon\": None or a code, \"shipping\": \"7.50\"}.\nReturn\
+  \ {\"subtotal\", \"discount\", \"shipping\", \"tax\", \"total\"} as Decimals rounded to cents. Rules:\n1. A line's\
+  \ amount is unit_price x qty; the subtotal is the sum of line amounts.\n2. Business customers get 10% off lines\
+  \ in the \"hardware\" category only.\n3. Coupon \"SAVE5\" takes 5.00 off, and \"PCT15\" takes 15% off, the amount\
+  \ left after the business discount.\n   Any other coupon code raises ValueError.\n4. The total discount (business\
+  \ plus coupon) never exceeds 30% of the subtotal; if it would, the coupon\n   part is reduced.\n5. Shipping is\
+  \ free when the subtotal after discounts is at least 100.00.\n6. Tax rates: \"CA\" 7.25%, \"NY\" 8.875%, \"OR\"\
+  \ 0%. Any other region raises ValueError.\n7. Tax applies to discounted line amounts (the coupon is spread over\
+  \ lines in proportion to their amounts\n   after the business discount) and to shipping, except that \"food\"\
+  \ lines are never taxed and shipping\n   isn't taxed in NY.\n8. Tax-exempt customers pay no tax.\n9. Tax is rounded\
+  \ once, on the total taxable amount, with ROUND_HALF_EVEN; other amounts round half up.\n10. An order whose total\
+  \ is below 1.00 raises ValueError.\n"
+requirements:
+  subtotal: test_subtotal
+  business_hardware_only: test_business_hardware_only
+  coupon_save5: test_coupon_save5
+  coupon_pct15_after_business: test_coupon_pct15_after_business
+  unknown_coupon: test_unknown_coupon
+  discount_cap: test_discount_cap
+  free_shipping: test_free_shipping
+  tax_rates: test_tax_rates
+  food_and_ny_shipping: test_food_and_ny_shipping
+  coupon_spread_for_tax: test_coupon_spread_for_tax
+  tax_exempt: test_tax_exempt
+  round_tax_once: test_round_tax_once
+  minimum_total: test_minimum_total
+notes: ''

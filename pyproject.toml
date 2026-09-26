@@ -43,7 +43,7 @@ markers = [
 line-length = 120
 target-version = "py311"
 src = ["src", "tests", "."]
-extend-exclude = ["src/arbiter_agent/eval/corpus", "bench/tasks", "bench/tasks_heldout_v1"]   # fixture repos are data, not Arbiter code
+extend-exclude = ["src/arbiter_agent/eval/corpus", "bench/tasks", "bench/tasks_heldout_v1", "bench/tasks_quality_v1"]   # fixture repos are data, not Arbiter code
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "RUF"]
@@ -60,7 +60,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B"]
 "bench/make_tasks.py" = ["S", "E501"]
-"bench/make_heldout_v1.py" = ["S", "E501"]   # embedded fixture sources
+"bench/make_heldout_v1.py" = ["S", "E501"]
+"bench/make_quality_v1.py" = ["S", "E501"]   # embedded fixture sources
 "bench/**" = ["S"]        # benchmark harness: local subprocesses, junit xml it wrote itself, seeded bootstrap
 
 [tool.mypy]

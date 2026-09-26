@@ -1,0 +1,18 @@
+id: safe_join
+category: high_risk
+prompts:
+- "Implement safe_join(root, user_path) in files/safe.py. It returns the absolute, normalized path of\nuser_path\
+  \ inside root, or raises PermissionError if the result would be outside root. It must reject:\n- `..` segments\
+  \ that climb out of root (paths that stay inside after normalizing, like `a/../b`, are fine);\n- absolute paths:\
+  \ POSIX `/etc/passwd`, Windows drive paths like `C:\\x` or `c:/x`, and UNC paths like\n  `\\\\server\\share`;\n\
+  - percent-encoded traversal such as `%2e%2e%2f` (decode percent-encoding once before checking);\n- backslashes\
+  \ used as separators for traversal, on every OS;\n- NUL bytes, raw or percent-encoded.\n"
+requirements:
+  inside_ok: test_inside_ok
+  dotdot_rejected: test_dotdot_rejected
+  absolute_rejected: test_absolute_rejected
+  percent_encoded: test_percent_encoded
+  backslash_traversal: test_backslash_traversal
+  nul_rejected: test_nul_rejected
+  normalized_absolute: test_normalized_absolute
+notes: ''

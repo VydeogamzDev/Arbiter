@@ -1,0 +1,17 @@
+id: catalog_cache
+category: requirements
+prompts:
+- 'Add update_price(sku, new_price), move_category(sku, new_category) and remove(sku) to Catalog in
+
+  catalog/store.py. Cached results must never be stale after any of them: every cached query has to reflect
+
+  the change. After remove(sku), price(sku) raises KeyError.
+
+  '
+requirements:
+  price_updated: test_price_updated
+  category_total_after_update: test_category_total_after_update
+  cheapest_after_update: test_cheapest_after_update
+  move_updates_both: test_move_updates_both
+  remove: test_remove
+notes: ''

@@ -1,0 +1,17 @@
+id: roman_strict
+category: false_complete
+prompts:
+- "Implement to_roman(n) and from_roman(s) in roman.py.\n- to_roman accepts ints from 1 to 3999 and returns the\
+  \ canonical numeral (e.g. 1994 -> \"MCMXCIV\"); anything\n  else raises ValueError, including bools and non-integers.\n\
+  - from_roman accepts only canonical uppercase numerals and returns the int. It raises ValueError for\n  everything\
+  \ else: non-canonical forms like \"IIII\", \"VV\", \"IC\", \"IL\", \"XM\", \"VX\" or \"MMMM\", lowercase,\n  empty\
+  \ strings, and any other characters, including spaces.\n- from_roman(to_roman(n)) == n for every n from 1 to 3999.\n"
+requirements:
+  to_roman_examples: test_to_roman_examples
+  to_roman_bounds: test_to_roman_bounds
+  to_roman_types: test_to_roman_types
+  from_roman_examples: test_from_roman_examples
+  reject_noncanonical: test_reject_noncanonical
+  reject_bad_input: test_reject_bad_input
+  roundtrip: test_roundtrip
+notes: ''

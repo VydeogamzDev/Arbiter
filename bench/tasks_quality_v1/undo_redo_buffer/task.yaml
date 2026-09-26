@@ -1,0 +1,22 @@
+id: undo_redo_buffer
+category: false_complete
+prompts:
+- "Implement TextBuffer in buffer.py:\n- TextBuffer(history_limit=100); `.text` is the current text (starts empty);\n\
+  - insert(pos, text) and delete(pos, length) edit the text; a position or range outside the text raises\n  IndexError\
+  \ (negative values included);\n- undo() reverts the last undo step and redo() re-applies the last undone one;\
+  \ each returns True, or False\n  when there's nothing to undo/redo;\n- any new edit after an undo clears the redo\
+  \ history;\n- consecutive insert() calls of a single character, each placed right at the end of the previous insert,\n\
+  \  are merged into one undo step, except that a space or newline character starts a new step;\n- only the most\
+  \ recent `history_limit` undo steps can be undone.\n"
+requirements:
+  basic_undo_redo: test_basic_undo_redo
+  return_values: test_return_values
+  new_edit_clears_redo: test_new_edit_clears_redo
+  typing_grouped: test_typing_grouped
+  space_starts_step: test_space_starts_step
+  not_adjacent_not_grouped: test_not_adjacent_not_grouped
+  multi_char_not_grouped: test_multi_char_not_grouped
+  delete_undo: test_delete_undo
+  bounds: test_bounds
+  history_limit: test_history_limit
+notes: ''

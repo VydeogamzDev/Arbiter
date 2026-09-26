@@ -1,0 +1,23 @@
+id: config_option_docs
+category: requirements
+prompts:
+- 'In app/config.py, add a `max_retries` option: an integer, default 3, allowed range 0 to 10 inclusive;
+
+  anything else (including non-integers) makes load() raise ValueError. Also rename the existing `timeout`
+
+  option to `timeout_s`. Configs that still use `timeout` must keep working (the value is used as
+
+  timeout_s), and load() must emit a DeprecationWarning for them. Document both options in the README''s
+
+  configuration table, add a CHANGELOG entry under Unreleased, and update config.example.toml.
+
+  '
+requirements:
+  default_max_retries: test_default_max_retries
+  max_retries_bounds: test_max_retries_bounds
+  timeout_renamed: test_timeout_renamed
+  old_timeout_warns: test_old_timeout_warns
+  readme_table: test_readme_table
+  changelog: test_changelog
+  example_toml: test_example_toml
+notes: ''

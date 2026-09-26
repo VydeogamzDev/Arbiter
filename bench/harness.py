@@ -34,7 +34,8 @@ from bench.conditions import CONDITIONS, PRIMARY, Condition
 
 BENCH = Path(__file__).resolve().parent
 TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arbiter)
-SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1"}   # held-out: never tune against these
+SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/quality: never tune on these
+          "quality_v1": BENCH / "tasks_quality_v1"}
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -205,6 +206,7 @@ def run_claude(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | N
         argv = [exe, "-p", "--model", args.model, "--output-format", "json", "--setting-sources", "project",
                 "--settings", str(settings_file), "--strict-mcp-config", "--mcp-config", str(mcp_file),
                 "--permission-mode", "acceptEdits", "--max-budget-usd", str(args.budget),
+                *(["--effort", args.effort] if args.effort else []),
                 "--allowedTools", *ALLOWED]
         argv += ["--session-id", sid] if i == 0 else ["--resume", sid]
         t0 = time.monotonic()
@@ -393,7 +395,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     (out / "run.json").write_text(json.dumps({
         "run_id": run_id, "agent": args.agent, "model": args.model, "reps": args.reps,
         "conditions": [c.name for c in conds], "suite": args.suite, "tasks": [t["id"] for t in tasks],
-        "budget_usd": args.budget,
+        "budget_usd": args.budget, "effort": args.effort,
         "started": time.strftime("%Y-%m-%d %H:%M:%S"), "argv": sys.argv}, indent=2), encoding="utf-8")
     log(f"run {run_id}: {len(tasks)} tasks x {len(conds)} conditions x {args.reps} reps = {len(jobs)} runs "
         f"(agent {args.agent}, {args.jobs} parallel) -> {out}")
@@ -425,6 +427,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--conditions", default="primary", help="comma list, or 'primary' (baseline,full)")
     r.add_argument("--tasks", default="all", help="comma list of task ids or categories, or 'all'")
     r.add_argument("--suite", default="dev", choices=sorted(SUITES))
+    r.add_argument("--effort", choices=["low", "medium", "high", "xhigh", "max"],
+                   help="claude --effort for every run (default: the CLI default)")
     r.add_argument("--reps", type=int, default=1)
     r.add_argument("--jobs", type=int, default=2)
     r.add_argument("--model", default=MODEL)
