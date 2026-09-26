@@ -309,9 +309,11 @@ def test_claude_plugin_package_is_consistent():
         assert h["type"] == "command" and h["args"] == ["hook", "claude_code", ev]   # exec form, no shell
 
 
-def test_setup_skips_appdata_configs_inside_packaged_app(home, clients_home, monkeypatch):
-    """Inside an MSIX-packaged app (e.g. the Claude desktop app) AppData writes are redirected into a
-    private copy the real client never reads: setup must refuse those files and say why."""
+def test_setup_delegates_appdata_configs_outside_packaged_app(home, clients_home, monkeypatch):
+    """Inside an MSIX-packaged app (e.g. the Claude desktop app) new AppData files are redirected into
+    a private copy the real client never reads. Setup edits the unaffected clients itself and re-runs
+    itself outside the package (WMI) for the rest, so an agent can set Arbiter up without the user
+    opening a terminal."""
     from arbiter_agent import appcontainer
 
     monkeypatch.setenv("ARBITER_TEST_PACKAGED", "Claude_test")
@@ -319,12 +321,42 @@ def test_setup_skips_appdata_configs_inside_packaged_app(home, clients_home, mon
     monkeypatch.setenv("LOCALAPPDATA", str(clients_home.localappdata))
     monkeypatch.setenv("APPDATA", str(clients_home.appdata))
     Path(clients_home.appdata).mkdir(parents=True, exist_ok=True)
+    calls = []
+
+    def fake_outside(argv, log_dir, timeout=180.0):
+        calls.append(argv)
+        return 0, "Planned changes:\n* register the Arbiter MCP server (servers.arbiter)\nDone."
+
+    monkeypatch.setattr(appcontainer, "run_outside", fake_outside)
     rc, out = setup(home, ["vscode", "claude_code"])
-    assert "runs inside the packaged app Claude_test" in out and rc == 3
+    assert rc == 0 and "runs outside the package" in out and "  | * register the Arbiter MCP server" in out
+    assert len(calls) == 1
+    argv = calls[0]
+    assert argv[argv.index("--clients") + 1] == "vscode" and "--yes" in argv and "--home" in argv
+    assert not (Path(clients_home.appdata) / "Code" / "User" / "mcp.json").exists()   # not written from inside
     import json as _json
 
     claude = _json.loads((Path(os.environ["CLAUDE_CONFIG_DIR"]) / ".claude.json").read_text(encoding="utf-8"))
-    assert "arbiter" in claude["mcpServers"]                    # ~/.claude isn't virtualized: written
+    assert "arbiter" in claude["mcpServers"]                    # ~/.claude isn't virtualized: written here
+
+    calls.clear()
+    rc, out = setup(home, ["vscode"], dry_run=True)
+    assert rc == 0 and "--dry-run" in calls[0]
+    monkeypatch.setattr(appcontainer, "run_outside", lambda *a, **k: (1, "error: boom"))
+    rc, out = setup(home, ["vscode"])
+    assert rc == 3 and "error: boom" in out
+
+
+def test_setup_output_file_mode_writes_exit_line(home, clients_home, tmp_path):
+    """The WMI-started half of run_outside() reports through --output-file."""
+    from arbiter_agent import appcontainer
+    from arbiter_agent.cli import main
+
+    out = tmp_path / "out.log"
+    rc = main(["--home", str(home.root), "setup", "--clients", "claude_code", "--dry-run", "--no-start",
+               "--output-file", str(out)])
+    text = out.read_text(encoding="utf-8")
+    assert rc == 0 and "Planned changes" in text and text.rstrip().endswith(f"{appcontainer.EXIT_MARK}0")
 
 
 def test_stable_port_avoids_ephemeral_ranges():

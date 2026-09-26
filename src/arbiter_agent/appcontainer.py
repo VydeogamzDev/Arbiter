@@ -9,8 +9,9 @@ through WMI or the real client apps, never see those files.
 Consequences Arbiter handles:
 - its home defaults to ``%USERPROFILE%\\.arbiter`` on Windows (not virtualized), so the CLI, hooks,
   MCP shims and the daemon always share one set of files;
-- setup refuses to edit client configs under AppData while packaged (the real client would read
-  the unmodified file), and says to run it from a regular terminal instead.
+- setup doesn't edit client configs under AppData from inside the package (the real client would
+  read the unmodified file); it re-runs itself for those clients outside the package through WMI
+  (:func:`run_outside`), so an agent can set Arbiter up without the user opening a terminal.
 """
 
 from __future__ import annotations
@@ -107,3 +108,43 @@ def virtualized(path: Path) -> bool:
     if not any(d == r or r in d.parents for r, _ in _appdata_roots()):
         return False
     return _dir_redirected(str(d), pkg)
+
+
+EXIT_MARK = "__arbiter_exit__ "
+
+
+def run_outside(argv: list[str], log_dir: Path, timeout: float = 180.0) -> tuple[int | None, str]:
+    """Run an Arbiter CLI command outside the package's file virtualization and return
+    (exit code, or None on timeout; output).
+
+    Agents set Arbiter up from inside packaged apps (the Claude desktop app's Code tab, for one),
+    where AppData writes are redirected. A process started through WMI isn't part of the package,
+    so it reads and writes the real files. It can't pipe output back, so ``argv`` must accept
+    ``--output-file``: the command writes its output there, then an exit-code line, in ``log_dir``
+    (Arbiter's home, which isn't virtualized).
+    """
+    import secrets
+    import time
+
+    from arbiter_agent.daemon import launcher_windows as lw
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out = log_dir / f"outside-{os.getpid()}-{secrets.token_hex(4)}.log"
+    lw.launch_via_wmi([*argv, "--output-file", str(out)], str(Path.home())).wait(30)
+    deadline = time.monotonic() + timeout
+    text = ""
+    while time.monotonic() < deadline:
+        try:
+            text = out.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        last = text.rstrip().rsplit("\n", 1)[-1] if text.strip() else ""
+        if last.startswith(EXIT_MARK):
+            try:
+                out.unlink()
+            except OSError:
+                pass
+            body = text.rstrip()[: -len(last)].rstrip()
+            return int(last[len(EXIT_MARK):].strip() or 1), body
+        time.sleep(0.2)
+    return None, text

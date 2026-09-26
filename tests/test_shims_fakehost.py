@@ -80,7 +80,12 @@ def test_fake_host_all_transports(daemon, tmp_path, client, transport):
         h.stop("Done. All tests pass.")
         h.session_end()
     assert all(c.ok for c in h.calls), [c.error for c in h.calls]
-    assert all(c.response == {} for c in h.calls)  # M1 makes no decisions: pass-through
+    # No decisions (annotate mode): responses are empty, except that the first prompt of a task may carry
+    # the pre-read context pack (retrieval.auto_context, on by default).
+    for c in h.calls:
+        extra = (c.response.get("hookSpecificOutput") or {}).get("additionalContext", "")
+        assert "decision" not in c.response and "continue" not in c.response, c.response
+        assert c.response == {} or (c.event == "UserPromptSubmit" and "[Arbiter] Task context" in extra), c.response
     st = status(home)
     assert st["events"] == len(h.calls) == 6
     assert st["ingest"].get("stored") == 6

@@ -13,6 +13,7 @@ Codex ``trusted_hash``.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ class SetupOptions:
     start_daemon: bool = True
     out: TextIO = field(default_factory=lambda: sys.stdout)
     ask: Callable[[str], str] = input
+    delegate_outside: bool = True      # packaged (MSIX) callers: set up AppData clients outside the package
 
 
 def stable_http_port(paths: ArbiterPaths) -> int:
@@ -98,6 +100,32 @@ def _set_scope(paths: ArbiterPaths, scope: str) -> None:
     write_private(cfg_file, yaml.safe_dump(data, sort_keys=False).encode())
 
 
+def _run_outside(paths: ArbiterPaths, opts: SetupOptions, clients: list[str], *, dry_run: bool) -> int | None:
+    """Re-run setup for ``clients`` outside the package's file virtualization and relay its output."""
+    from arbiter_agent import appcontainer
+    from arbiter_agent.daemon.lifecycle import CLIENT_ENV_VARS
+
+    argv = [sys.executable, "-m", "arbiter_agent"]
+    if paths.root is not None:
+        argv += ["--home", str(paths.root)]
+    for name in CLIENT_ENV_VARS:            # WMI-started processes don't inherit our environment
+        value = os.environ.get(name)
+        if value:
+            argv += ["--client-env", f"{name}={value}"]
+    argv += ["setup", "--clients", ",".join(clients), "--no-start", "--dry-run" if dry_run else "--yes"]
+    try:
+        code, text = appcontainer.run_outside(argv, paths.logs)
+    except OSError as exc:
+        opts.out.write(f"!! couldn't start setup outside the package ({exc}); run `arbiter setup --clients "
+                       f"{','.join(clients)}` from a regular terminal\n")
+        return 1
+    for line in text.splitlines():
+        opts.out.write(f"  | {line}\n")
+    if code is None:
+        opts.out.write("!! setup outside the package didn't finish in time; run `arbiter doctor` to check\n")
+    return code
+
+
 def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = None) -> int:
     out = opts.out
     env = env or current_env()
@@ -116,7 +144,7 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
     else:
         out.write("Detected clients:\n")
         for p, hits in detected:
-            out.write(f"  - {p.display_name:24s} ({hits[0]})  -> {planned_tiers(p)}\n")
+            out.write(f"  - {p.display_name:24s} --clients {p.id:15s} ({hits[0]})  -> {planned_tiers(p)}\n")
         if not detected:
             out.write("  (none found; use --clients or `arbiter setup --print generic_mcp`)\n")
             return 1
@@ -140,17 +168,28 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
     from arbiter_agent import appcontainer
 
     pkg = appcontainer.package_name()
+    outside: list[str] = []
     if pkg:
         for c in changes:
             if c.error is None and appcontainer.virtualized(c.path):
-                c.error = (f"this terminal runs inside the packaged app {pkg}, so writes under AppData go to a "
-                           "private copy the client never reads; run `arbiter setup` from a regular terminal "
-                           "for this client")
+                if opts.delegate_outside and sys.platform == "win32":
+                    outside.append(c.client)
+                else:
+                    c.error = (f"this process runs inside the packaged app {pkg}, so writes under AppData go to "
+                               "a private copy the client never reads; run `arbiter setup` from a regular "
+                               "terminal for this client")
+        outside = sorted(set(outside))
+        changes = [c for c in changes if c.client not in outside]
     out.write("\nPlanned changes:\n")
     for c in changes:
         out.write(f"* {c.description}\n")
         out.write(c.diff())
+    if outside:
+        out.write(f"\nThis process runs inside the packaged app {pkg}, where writes under AppData are redirected. "
+                  f"Setup for {', '.join(outside)} runs outside the package instead (through WMI):\n")
     if opts.dry_run:
+        if outside:
+            _run_outside(paths, opts, outside, dry_run=True)
         out.write("\n(dry run: nothing written)\n")
         return 0
     if any(c.error for c in changes):
@@ -168,6 +207,8 @@ def run_setup(paths: ArbiterPaths, opts: SetupOptions, env: ClientEnv | None = N
     for line in results:
         out.write(f"  {line}\n")
     problems = sum(1 for line in results if line.startswith(("skipped", "FAILED")))
+    if outside and _run_outside(paths, opts, outside, dry_run=False) != 0:
+        problems += 1
     for c in changes:   # files setup couldn't edit safely: show what to paste instead
         prof = next((p for p in chosen if p.id == c.client), None)
         if c.error and prof is not None and c.kind in ("json_named_entry", "jsonc_named_entry", "yaml_named_entry"):

@@ -29,6 +29,19 @@ arbiter doctor                     # shows what's verified for each client
 
 `arbiter uninstall` removes exactly what setup added. Files you haven't edited since are restored byte for byte.
 
+### Let your coding agent set it up
+
+You don't need to open a terminal yourself. Paste this into Claude Code, Codex or any agent that can run commands:
+
+> Install Arbiter (https://github.com/VydeogamzDev/Arbiter) and connect it to this agent. Run `uv tool install arbiter-agent` (or `pipx install arbiter-agent`), then `arbiter setup --dry-run` and show me the diff for this client (the "Detected clients" list gives its `--clients` id). When I approve, run `arbiter setup --yes --clients <id>` and then `arbiter doctor`, and tell me whether every check is ok.
+
+Setup is safe to run this way:
+- **No prompts.** With `--yes` nothing asks for input, `--dry-run` writes nothing, and `arbiter doctor` confirms the result.
+- **Works inside sandboxed desktop apps.** When the agent runs inside a packaged Windows app, such as the Claude desktop app's Code tab, new files under `AppData` are redirected into the app's private copy. Setup detects this and writes those client configs from a helper process started outside the app, so the real client sees them.
+- **What still needs you:**
+  - Hooks load when a session starts, so open a new agent session after setup.
+  - Codex asks you to trust new hooks yourself, in `/hooks` or Settings > Hooks. By design, no agent can approve them for you.
+
 > Until `arbiter-agent` is on PyPI, install from a local build: `uv build`, then `uv tool install dist/arbiter_agent-0.1.0-py3-none-any.whl`.
 
 ## Using it
@@ -61,10 +74,14 @@ Agents get these MCP tools:
 Retrieval results are always fresh, skip secrets and generated files, and cite `path:line`. Use `arbiter search "..."` in a terminal for the same results.
 
 What the gate checks:
-- every active contract is PASS (or waived by you);
-- nothing you asked for is left without a contract;
-- test results are fresh (observed after the last code change) and come from the exact test command, not a narrowed `-k` run;
-- test integrity is OK against the session baseline: no deleted tests, skip markers, weakened assertions, rewritten fixtures or new harness filters.
+- **without contracts** (the default, `completion.evidence_mode: observed`): Arbiter saw a passing test run after the last code change. The agent isn't sent back to write contracts when it already verified its work.
+- **with contracts** (recorded by the agent or by you):
+  - every active contract is PASS (or waived by you);
+  - nothing you asked for is left without a contract;
+  - test results are fresh (observed after the last code change) and come from the exact test command, not a narrowed `-k` run.
+- **either way,** test integrity is OK against the session baseline: no deleted tests, skip markers, weakened assertions, rewritten fixtures or new harness filters.
+
+When a task starts, `retrieval.auto_context` also hands the agent a pre-read context pack: the repo map, the test command, and the relevant files and their imports. On the benchmark in [bench/](bench/README.md), this setup cut cost per task by 26% and turns by 38% on held-out tasks.
 
 A message that ends with a question is never gated. Block reasons are prefixed `[Arbiter]` and scoped to the current turn, so agents don't save them as standing preferences.
 

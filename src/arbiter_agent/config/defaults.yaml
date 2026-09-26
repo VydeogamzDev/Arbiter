@@ -135,8 +135,8 @@ retrieval:
   refresh_budget_s: 3.0         # per-query incremental refresh budget; unindexed changes are left out, never stale
   include_generated: false      # vendored/generated trees, lockfiles, minified bundles
   embeddings: "off"             # optional vector channel (M6.5); only "off" ships
-  auto_context: false           # M10.4: inject likely files when a prompt starts a new task (bounded); opt-in,
-                                # like ui.inject_status: it adds tokens to prompts and client formats vary
+  auto_context: true            # pre-read task pack at the first prompt of a new task (bounded); on by default
+                                # since it cut cost 26% and turns 38% on the held-out benchmark (bench/)
   auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
   auto_context_pack_tokens: 2500   # pre-read task pack: repo map, test command, top files + their imports; 0 = names only
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead

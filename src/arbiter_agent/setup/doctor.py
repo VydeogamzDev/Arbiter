@@ -169,8 +169,9 @@ def render(report: dict[str, Any]) -> str:
         lines.append(f"daemon: not running ({d.get('reason')}); it starts automatically on first use")
     lines.append(f"storage: {report['storage_bytes'] / 1e6:.1f} MB")
     if report.get("packaged"):
-        lines.append(f"note: this terminal runs inside the packaged app {report['packaged']}: AppData writes are "
-                     "redirected, so setup skips client configs under AppData (Arbiter's home is ~/.arbiter)")
+        lines.append(f"note: this process runs inside the packaged app {report['packaged']}, where new AppData files "
+                     "are redirected; setup writes those client configs from outside the package (Arbiter's home "
+                     "is ~/.arbiter)")
     if report["path_arbiter"]["shadowed"]:
         lines.append(f"warning: another 'arbiter' is first on PATH: {report['path_arbiter']['which']}")
     if not report["clients"]:

@@ -216,6 +216,18 @@ def cmd_setup(a: argparse.Namespace) -> int:
         print_snippet(load_registry(paths.config / "profiles").get(a.print_client), sys.stdout)
         return 0
     clients = [c.strip() for c in a.clients.split(",") if c.strip()] if a.clients else None
+    if a.output_file:   # appcontainer.run_outside(): a WMI-started setup reports through a file
+        from arbiter_agent.appcontainer import EXIT_MARK
+
+        with open(a.output_file, "w", encoding="utf-8") as f:
+            try:
+                code = run_setup(paths, SetupOptions(yes=a.yes, dry_run=a.dry_run, clients=clients, scope=a.scope,
+                                                     start_daemon=not a.no_start, out=f, delegate_outside=False))
+            except Exception as exc:  # the caller is waiting for the exit line
+                f.write(f"error: {type(exc).__name__}: {exc}\n")
+                code = 1
+            f.write(f"\n{EXIT_MARK}{code}\n")
+        return code
     return run_setup(paths, SetupOptions(yes=a.yes, dry_run=a.dry_run, clients=clients, scope=a.scope,
                                          start_daemon=not a.no_start))
 
@@ -318,6 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--print", dest="print_client", metavar="CLIENT", help="print a manual config snippet")
     s.add_argument("--scope", choices=["all_except_excluded", "allow_list"])
     s.add_argument("--no-start", action="store_true", help="don't start the daemon")
+    s.add_argument("--output-file", help=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("doctor", help="check each client's verified tiers and Arbiter's health")
