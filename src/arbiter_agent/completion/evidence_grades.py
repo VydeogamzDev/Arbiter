@@ -55,8 +55,23 @@ class EvalContext:
 
     def last_code_change_seq(self) -> int:
         seqs = [f["source_seq"] for f in self.facts if f["kind"] == "file_change"
-                and not is_doc_path(str(f.get("subject") or ""))]
+                and not is_doc_path(str(f.get("subject") or "")) and self._in_repo(str(f.get("subject") or ""))]
         return max(seqs) if seqs else 0
+
+    def _in_repo(self, subject: str) -> bool:
+        """Scratch files outside the repository (an agent's own temp scripts) can't make the repo's test
+        results stale; seen as a false block in a Sonnet 5 benchmark run. Relative and <shell> subjects
+        stay conservative."""
+        if not self.root or not subject or subject.startswith("<"):
+            return True
+        p = Path(subject)
+        if not p.is_absolute():
+            return True
+        try:
+            p.resolve().relative_to(Path(self.root).resolve())
+            return True
+        except (ValueError, OSError):
+            return False
 
 
 def _pathish(t: str) -> bool:

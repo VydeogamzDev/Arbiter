@@ -404,3 +404,18 @@ def test_context_pack_on_first_prompt_and_late_pack_on_next_tool_hook():
         h.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": "calc.py"}, "tool_response": {},
                                "tool_use_id": "r2"})
         assert h.responses[-1] == {}                                   # delivered once
+
+
+def test_scratch_file_outside_repo_does_not_stale_tests(tmp_path):
+    """A Sonnet 5 benchmark run wrote a scratch check script outside the repo after passing tests; that
+    must not count as a code change (it did, and the gate blocked a verified task)."""
+    with Harness(config={"completion": {"gate_mode": "block"}}) as h:
+        _observed(h)
+        h.edit("calc.py", "def add(a, b):\n    return b + a\n")
+        h.shell("python -m pytest -q", "1 passed in 0.01s", exit_code=0)
+        outside = tmp_path / "scratchpad" / "check.py"
+        h.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": str(outside)},
+                               "tool_response": {}, "tool_use_id": "w-outside"})
+        assert h.stop("Done. The suite passes.") == {}
+        h.edit("calc.py", "def add(a, b):\n    return a + b\n")          # a real in-repo change still counts
+        assert h.stop("Done again.").get("decision") == "block"

@@ -5,7 +5,6 @@ Real Claude Code runs spent 3-5 calls orienting before the first edit: listing f
 twice), then reading the files the ranking already knew about. The pack carries:
 
 - a repo map (every indexed path for small repos; top directories plus the picks otherwise);
-- the likely test command;
 - the content of the top-ranked files, the files they import (bugs often sit one import away
   from the file the prompt names) and their tests, within a token budget.
 
@@ -23,29 +22,6 @@ from typing import Any
 WORDING = "[Arbiter] Task context, pre-read at this prompt (snapshot; files may change later):"
 MAP_ALL_MAX = 80          # list every path up to this many files
 MAX_FILE_CHARS = 6000     # one file's share before it's cut
-TEST_DIRS = ("tests/", "test/")
-
-
-def test_command(files: list[str], root: Path) -> str | None:
-    names = {Path(f).name for f in files}
-    if any(f.endswith(".py") for f in files) and (
-            any(f.startswith(TEST_DIRS) or Path(f).name.startswith("test_") for f in files)
-            or names & {"pytest.ini", "conftest.py", "pyproject.toml", "setup.cfg", "tox.ini"}):
-        return "python -m pytest -q"
-    if "package.json" in files:
-        try:
-            import json
-
-            scripts = json.loads((root / "package.json").read_text("utf-8")).get("scripts") or {}
-        except (OSError, ValueError):
-            scripts = {}
-        if "test" in scripts:
-            return "npm test"
-    if "Cargo.toml" in files:
-        return "cargo test"
-    if "go.mod" in files:
-        return "go test ./..."
-    return None
 
 
 def repo_map(files: list[str], picks: list[str]) -> str:
@@ -77,9 +53,6 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
           max_tokens: int) -> str | None:
     budget = max_tokens * 4
     lines = [WORDING, f"Repo files: {repo_map(files, picks)}"]
-    cmd = test_command(files, root)
-    if cmd:
-        lines.append(f"Tests run with: `{cmd}`")
     used = sum(len(x) + 1 for x in lines)
     shown: list[str] = []
     for p in picks:
@@ -95,7 +68,7 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
         lines.append(block)
         shown.append(p)
         used += len(block) + 1
-    if not shown and not cmd:
+    if not shown:
         return None
     return "\n".join(lines)
 

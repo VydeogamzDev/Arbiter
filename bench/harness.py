@@ -40,10 +40,12 @@ DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
 AGENT_PY = shutil.which("python") or sys.executable     # the interpreter the agent's shell finds
-ALLOWED = ["Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "LS", "TodoWrite", "mcp__arbiter"]
-for _cmd in ("python", "python3", "py", "pytest", "git status", "git diff", "git log", "git show", "ls", "cat",
-             "head", "tail", "wc", "find", "grep", "dir", "type", "Get-Content", "Get-ChildItem", "Select-String"):
-    ALLOWED += [f"Bash({_cmd}:*)", f"PowerShell({_cmd}:*)"]
+# Shell commands are allowed outright. A narrow allowlist denied compound commands such as
+# `git ls-files; Get-Content ...`; baseline agents lost calls to those denials while orienting, which
+# inflated Arbiter's measured gain (the context pack removed the orientation step and the denials).
+ALLOWED = ["Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "LS", "TodoWrite", "mcp__arbiter", "Bash",
+           "PowerShell"]
+WARMUP_PROMPT = "Reply with just the word OK. Don't use any tools."
 PRINT_LOCK = threading.Lock()
 
 
@@ -400,6 +402,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     log(f"run {run_id}: {len(tasks)} tasks x {len(conds)} conditions x {args.reps} reps = {len(jobs)} runs "
         f"(agent {args.agent}, {args.jobs} parallel) -> {out}")
     before = real_install_sessions()
+    if args.agent == "claude" and args.warmup:
+        # One throwaway call per condition writes Claude Code's system-prompt prefix into the prompt
+        # cache, so no measured run pays the cold-cache write (~30k tokens; it landed on two baseline
+        # runs of the first Sonnet batch and hid a 17% loss). Not scored, not in the report.
+        warm = {**tasks[0], "prompts": [WARMUP_PROMPT]}
+        spent = 0.0
+        for c in conds:
+            rec = run_one(warm, c, 0, out / "_warmup", args)
+            spent += rec.get("cost_usd") or 0.0
+        meta = json.loads((out / "run.json").read_text("utf-8"))
+        meta["warmup_cost_usd"] = round(spent, 4)
+        (out / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as ex:
         futures = [ex.submit(run_one, t, c, r, out, args) for t, c, r in jobs]
         for f in cf.as_completed(futures):
@@ -478,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--encoder", type=Path, default=DEFAULT_ENCODER)
     r.add_argument("--force", action="store_true", help="redo runs that already have a result")
     r.add_argument("--keep-workspaces", action="store_true")
+    r.add_argument("--no-warmup", dest="warmup", action="store_false",
+                   help="skip the per-condition prompt-cache warm-up call")
     rp = sub.add_parser("report")
     rp.add_argument("run_dir", type=Path)
     rs = sub.add_parser("rescore", help="re-score finished runs with the current scorer")

@@ -168,10 +168,12 @@ RETRIEVAL_TOOLS = {"arbiter_search": "search", "arbiter_symbol": "symbol", "arbi
 TASK_TOOLS = {"arbiter_contract_propose": "contract_propose", "arbiter_contracts": "session_status",
               "arbiter_scope_change": "scope_change", "arbiter_finish_check": "finish_check"}
 
-INSTRUCTIONS = ("Arbiter records and checks this coding session locally. Its hook tool is internal. "
-                "Completion is checked from what Arbiter observes: a passing test run after the last code change "
-                "and no weakened tests. Contracts (arbiter_contract_propose) are optional, for requirements a "
-                "test run can't show. Use arbiter_status to see what Arbiter has recorded.")
+# Kept neutral on purpose: instructions that described what completion evidence Arbiter wants made
+# agents run extra test passes (benchmark, 2026-09-26). When evidence is actually missing, the Stop
+# hook says so for that turn only.
+INSTRUCTIONS = ("Arbiter records this coding session locally. Its hook tool is internal, and its other tools "
+                "are optional: repository search and context, contracts for requirements you want checked, "
+                "and arbiter_status for what it has recorded.")
 
 
 class MCPShim:
