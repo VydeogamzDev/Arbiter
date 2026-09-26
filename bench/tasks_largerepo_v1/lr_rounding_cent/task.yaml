@@ -1,0 +1,10 @@
+id: lr_rounding_cent
+category: retrieval
+prompts:
+- Finance reports that invoice totals in the monthly revenue report are sometimes one cent low (for example a line
+  of 3 x 0.125 should total 0.38). Find the cause and fix it.
+requirements:
+  half_up: test_half_up
+  invoice_total: test_invoice_total
+  monthly_revenue: test_monthly_revenue
+notes: ''

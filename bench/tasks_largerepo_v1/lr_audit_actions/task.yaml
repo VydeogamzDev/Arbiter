@@ -1,0 +1,13 @@
+id: lr_audit_actions
+category: requirements
+prompts:
+- Security wants every destructive admin action audited the way create_user already is. Add audit records to cancel_order
+  and refund_order (shopcore/api/handlers/orders.py) and delete_product (shopcore/api/handlers/catalog.py), with
+  the event names order.cancel, order.refund and product.delete, the acting user as the actor and the order id or
+  SKU as the target.
+requirements:
+  cancel_audited: test_cancel_audited
+  refund_audited: test_refund_audited
+  delete_audited: test_delete_audited
+  create_unchanged: test_create_unchanged
+notes: ''

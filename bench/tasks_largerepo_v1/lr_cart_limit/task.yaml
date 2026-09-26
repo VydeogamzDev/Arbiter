@@ -1,0 +1,14 @@
+id: lr_cart_limit
+category: requirements
+prompts:
+- 'Add a cart size limit: Cart.add_item in shopcore/orders/cart.py must raise CartLimitError when adding a new SKU
+  would exceed the max_cart_items setting (default 50; adding more of a SKU already in the cart is always fine).
+  Define CartLimitError in shopcore/orders/errors.py as a subclass of OrderError, and use a new "cart_limit" entry
+  in shopcore/i18n/messages.py for its message: "A cart can hold at most {limit} different items."'
+requirements:
+  raises_at_limit: test_raises_at_limit
+  existing_sku_ok: test_existing_sku_ok
+  error_hierarchy: test_error_hierarchy
+  message_entry: test_message_entry
+  uses_setting: test_uses_setting
+notes: ''

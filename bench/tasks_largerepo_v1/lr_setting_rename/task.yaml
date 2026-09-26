@@ -1,0 +1,12 @@
+id: lr_setting_rename
+category: api_compat
+prompts:
+- 'Rename the `mail_host` setting to `smtp_host` everywhere in shopcore (the email sender reads it). Old code and
+  configs still use `mail_host`: get_setting("mail_host") and configure(mail_host=...) must keep working, emitting
+  a DeprecationWarning.'
+requirements:
+  new_name: test_new_name
+  old_lookup_warns: test_old_lookup_warns
+  old_override_warns: test_old_override_warns
+  sender_uses_new: test_sender_uses_new
+notes: ''

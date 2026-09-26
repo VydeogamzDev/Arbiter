@@ -35,7 +35,7 @@ from bench.conditions import CONDITIONS, PRIMARY, Condition
 BENCH = Path(__file__).resolve().parent
 TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arbiter)
 SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/quality: never tune on these
-          "quality_v1": BENCH / "tasks_quality_v1"}
+          "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1"}
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
