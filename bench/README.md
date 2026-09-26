@@ -120,6 +120,19 @@ The per-model pack decision is also in `edf9a1c`.
 
 - **First session vs normal use.** An installed daemon remembers each client's model, so only a client's first session starts without it. In that session Opus gets the map pack and reads every listed file (reads 11 -> 29). Runs seed the model by default to measure ordinary sessions; `--first-session` measures the first one.
 - **Why Opus's saving caps near 10-12%.** About two thirds of an Opus run is Claude Code's own fixed cost: the session-context cache write on the first call (~30%) and its ~30k-token system prompt re-read on every call (~31%). Arbiter cut Opus's calls by 22-24%, which only reaches the other third.
+### Retest 3: plus `arbiter slim` lean (`687bf3c`, condition `full_slim`, same baselines, $2.72)
+
+| model | suite | cost [95% CI] | calls | success |
+|---|---|---|---|---|
+| Opus 5.5 | held-out | **-41%** [-57% to -26%] | -6% | 10/10 |
+| Opus 5.5 | large-repo | **-52%** [-60% to -42%] | -38% | 5/5 |
+| Sonnet 5 | held-out | **-60%** [-80% to -44%] | -36% | 10/10 |
+| Sonnet 5 | large-repo | **-63%** [-98% to -39%] | -23% | 5/5 |
+
+- **What slim changes.** It cuts Claude Code's own per-call context from ~39k to ~16.5k tokens. On Opus held-out, cache writes fell 46% and context re-reads fell 59%.
+- **Not measured yet: slim alone.** Slim would also help without the rest of Arbiter, and a baseline+slim run would show the split.
+- **The gain depends on the client.** Much of it comes from the desktop app's large tool set (Artifact is ~11k tokens), so a plain terminal Claude Code saves less.
+
 - **Why Sonnet gains more.** Sonnet's baseline spends more calls on orientation and spot checks, and those are exactly what the map pack and auto-test remove. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
 
 Held-out v1 in detail:
