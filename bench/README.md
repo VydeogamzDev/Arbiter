@@ -78,6 +78,13 @@ These 10 tasks sit nearer the model's limit: a 10-rule pricing spec, undo/redo g
 |---|---|---|---|---|---|---|
 | default | 9/10 / 9/10 | 98% / 98% | 1 / 1 | 0 / 0 | -10% | **-32%** |
 | low | 10/10 / 9/10 | 100% / 98% | 0 / 1 | 0 / 0 | -3% | -22% |
+| default, **Sonnet 5** | 8/10 / 8/10 | 97% / 97% | 2 / 2 | 0 / 0 | +1% | ±0% (output tokens +18%, wall +22%) |
+
+On Sonnet 5 both conditions failed the same two tasks (`fx_flaky_ci`, `undo_redo_buffer`), and every failure was reported as done.
+
+The efficiency gain didn't carry over. Sonnet barely explores, reading one file and writing in 3–6 turns, so the pack has few orientation turns to save. The extra context made it write more instead.
+
+The single gate block on Sonnet was a false positive: a scratch file written outside the repo counted as a code change. Excluding files outside the project fixes it. Because that finding comes from this suite, quality_v1 counts as a dev set for any future quality claim.
 
 **No measurable quality difference.** The only failure was the same task (`fx_flaky_ci`), where the agent kept a cache that ignores which rate table it was given. It happened in 3 of the 4 runs, in both conditions. Whether a run fails there depends on whether the agent removes the cache, not on Arbiter.
 
