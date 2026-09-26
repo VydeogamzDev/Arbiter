@@ -112,11 +112,11 @@ def _argv(cmd: VerifyCommand) -> tuple[list[str] | str, bool]:
     return cmd.run, True   # platform default shell (cmd.exe on Windows, /bin/sh elsewhere)
 
 
-def run_one(cmd: VerifyCommand, root: str | Path) -> VerifyResult:
+def run_one(cmd: VerifyCommand, root: str | Path, extra_env: dict[str, str] | None = None) -> VerifyResult:
     argv, use_shell = _argv(cmd)
     started = time.time()
     t0 = time.monotonic()
-    env = dict(os.environ, ARBITER_VERIFY="1")
+    env = dict(os.environ, ARBITER_VERIFY="1", **(extra_env or {}))
     timed_out = False
     try:
         proc = subprocess.run(argv, shell=use_shell, cwd=str(root), capture_output=True, text=True,

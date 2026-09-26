@@ -110,13 +110,21 @@ def test_pack_waits_for_the_model_then_picks_full_or_map(model, want):
         h.engine.pack_provider = provider
         h.engine.context_provider = lambda *a: {}
         _repo(h, CALC_OK)
-        assert h.prompt("Fix the addition bug in calc.py.") == {}        # model unknown: held back
+        first = h.prompt("Fix the addition bug in calc.py.")               # model unknown: the map now
+        assert "MAP" in first["hookSpecificOutput"]["additionalContext"]
         (h.dir / "t.jsonl").write_text(json.dumps({"type": "assistant", "message": {"model": model}}) + "\n",
                                        encoding="utf-8")
         r = h.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": str(h.repo / "calc.py")},
                                    "tool_response": {}, "tool_use_id": "r1"})
-        text = r["hookSpecificOutput"]["additionalContext"]
+        if want == "full":                                                 # contents follow for Opus
+            assert "FULL" in r["hookSpecificOutput"]["additionalContext"]
+        else:
+            assert r == {}                                                 # the map was all Sonnet needs
+        # the model is remembered: the next session's first prompt gets the right pack straight away
+        nxt = h.hook("UserPromptSubmit", {"prompt": "New task: refactor calc.py."}, session="s2")
+        text = nxt["hookSpecificOutput"]["additionalContext"]
         assert ("FULL" in text) == (want == "full") and ("MAP" in text) == (want == "map")
+        assert json.loads((h.db.parent / "models.json").read_text())["claude_code"] == model
 
 
 def test_codex_payload_model_decides_at_the_first_prompt():

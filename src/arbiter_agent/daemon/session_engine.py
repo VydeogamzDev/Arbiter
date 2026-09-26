@@ -117,7 +117,8 @@ class SessionEngine:
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
         self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
-        self._last_model: dict[str, str] = {}       # client -> most recent model seen (predicts new sessions)
+        self._models_file = Path(db).parent / "models.json"   # client -> last model, kept across restarts
+        self._last_model: dict[str, str] = _load_models(self._models_file)   # predicts a new session's model
         self._transcripts: dict[str, str] = {}      # sid -> transcript path from its hooks
         self.cancel = EpochCancel()
         self._wake = threading.Event()
@@ -937,7 +938,14 @@ class SessionEngine:
             ex.shutdown(wait=False)
         if use_pack:
             if mode is None:
-                unknown = str(self.config.get("retrieval.auto_context_pack_unknown", "defer"))
+                unknown = str(self.config.get("retrieval.auto_context_pack_unknown", "map_then_upgrade"))
+                if unknown == "map_then_upgrade":
+                    # Model unknown (a client's first session): the map now saves orientation for any
+                    # model; if the first tool hook shows a model that uses file contents, they follow.
+                    done_up: cf.Future[dict[str, Any]] = cf.Future()
+                    done_up.set_result(res)
+                    self._late_packs[sid] = (done_up, query, -time.monotonic())   # negative start = upgrade
+                    return self._pack_text(sid, res, query, "map")
                 if unknown == "defer":
                     # The model isn't known at the first prompt (Claude Code's prompt hook doesn't say):
                     # hold the pack and pick full or map at the first tool hook, once the transcript
@@ -979,6 +987,14 @@ class SessionEngine:
         """A pack that missed the prompt hook (or waited for the model), once it's ready (dropped after
         60 s or a new task)."""
         fut, query, started = self._late_packs[sid]
+        if started < 0:                                   # map already sent: contents only for full-mode models
+            self._late_packs.pop(sid, None)
+            if self._pack_mode(sid.split(":", 1)[0], sid) != "full":
+                return None
+            try:
+                return self._pack_text(sid, fut.result(timeout=0), query, "full")
+            except Exception:
+                return None
         if not fut.done():
             if time.monotonic() - started > 60:
                 self._late_packs.pop(sid, None)
@@ -999,7 +1015,7 @@ class SessionEngine:
         model = payload.get("model")
         if isinstance(model, str) and model:
             self._models[sid] = model
-            self._last_model[client] = model
+            self._remember_model(client, model)
         tp = payload.get("transcript_path")
         if isinstance(tp, str) and tp:
             self._transcripts[sid] = tp
@@ -1011,8 +1027,17 @@ class SessionEngine:
         model = transcript_model(path) if path else None
         if model:
             self._models[sid] = model
-            self._last_model[client] = model
+            self._remember_model(client, model)
         return model
+
+    def _remember_model(self, client: str, model: str) -> None:
+        if self._last_model.get(client) == model:
+            return
+        self._last_model[client] = model
+        try:
+            self._models_file.write_text(json.dumps(self._last_model), encoding="utf-8")
+        except OSError:
+            pass
 
     def _pack_mode(self, client: str, sid: str) -> str | None:
         """full | map | off for this session's model; None while the model is unknown. Measured
@@ -1513,3 +1538,11 @@ def transcript_model(path: str, tail_bytes: int = 262144) -> str | None:
             if isinstance(m, str) and m and not m.startswith("<"):
                 return m
     return None
+
+
+def _load_models(path: Path) -> dict[str, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}

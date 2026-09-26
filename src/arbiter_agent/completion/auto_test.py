@@ -138,8 +138,15 @@ class AutoTester:
         return str(forced) if forced else detect_command(root)
 
     def _run(self, root: Path, command: str, state: str) -> Outcome:
+        import tempfile
+
         timeout = int(self.config.get("completion.auto_test_timeout_s", 120))
-        res = vr.run_one(vr.VerifyCommand(name="auto_test", run=command, kind="test", timeout_s=timeout), root)
+        # A private bytecode cache per run: Python validates .pyc files by source size and whole-second
+        # mtime, so a same-size edit within a second of the last run (a one-character fix) would run
+        # stale bytecode and report the old result. Found by this module's own test.
+        with tempfile.TemporaryDirectory(prefix="arbiter-pyc-") as pyc:
+            res = vr.run_one(vr.VerifyCommand(name="auto_test", run=command, kind="test", timeout_s=timeout), root,
+                             extra_env={"PYTHONPYCACHEPREFIX": pyc, "PYTHONDONTWRITEBYTECODE": ""})
         out = Outcome(command, res, state, time.time())
         with self._lock:
             self._last[str(root)] = out

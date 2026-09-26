@@ -145,8 +145,9 @@ retrieval:
     "*sonnet*": map
     "*haiku*": map
   auto_context_pack_default_mode: full   # models not in the table
-  auto_context_pack_unknown: defer       # model unknown at the first prompt (Claude Code): defer to the first tool
-                                         # hook, when the transcript shows it | full | map | off
+  auto_context_pack_unknown: map_then_upgrade   # model unknown at the first prompt (a client's first session;
+                                         # later sessions reuse the last model seen): map now, file contents
+                                         # at the first tool hook if the model is full-mode | defer | full | map | off
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
 
 review:

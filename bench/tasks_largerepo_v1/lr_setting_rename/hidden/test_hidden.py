@@ -24,9 +24,10 @@ def test_old_lookup_warns():
 
 
 def test_old_override_warns():
+    # The prompt doesn't say whether configure() or the lookup warns; either is fine.
     settings.reset()
-    settings.configure(mail_host="legacy.example")
     with pytest.warns(DeprecationWarning):
+        settings.configure(mail_host="legacy.example")
         assert settings.get_setting("smtp_host") == "legacy.example"
     settings.reset()
 
