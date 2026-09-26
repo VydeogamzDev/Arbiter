@@ -1,0 +1,16 @@
+id: reversible_migration
+category: high_risk
+prompts:
+- 'Add a new migration to db/migrations that adds a nullable `email` TEXT column to the users table
+
+  and a unique index on it. Migrations must be reversible: downgrade must restore the previous schema
+
+  exactly and keep existing rows (this is SQLite, so dropping a column may mean recreating the table).
+
+  '
+requirements:
+  upgrade_adds_column: test_upgrade_adds_column
+  unique_index: test_unique_index
+  downgrade_restores_schema: test_downgrade_restores_schema
+  downgrade_keeps_rows: test_downgrade_keeps_rows
+notes: ''

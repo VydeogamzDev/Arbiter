@@ -1,0 +1,10 @@
+id: invoice_date_bug
+category: retrieval
+prompts:
+- 'Bug report: invoices for customers in timezones ahead of UTC (for example Sydney, UTC+10) sometimes show the
+  previous day''s date. Fix it.'
+requirements:
+  ahead_of_utc: test_ahead_of_utc
+  behind_utc: test_behind_utc
+  utc_unchanged: test_utc_unchanged
+notes: ''

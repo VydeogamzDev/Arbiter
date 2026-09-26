@@ -1,0 +1,28 @@
+id: discount_tiers
+category: requirements
+prompts:
+- 'Add loyalty tiers and coupons to compute_total in shop/pricing.py:
+
+  - an optional `tier` argument: "gold" gets 5% off, "platinum" gets 10% off, any other tier (or none) gets no discount;
+
+  - an optional `coupon` amount in dollars, subtracted after the tier discount;
+
+  - the total must never go below zero;
+
+  - existing calls like compute_total(items) must keep working unchanged;
+
+  - round the final total to cents.
+
+  Add tests for the new behavior.
+
+  '
+requirements:
+  gold: test_gold
+  platinum: test_platinum
+  unknown_tier: test_unknown_tier
+  coupon_after_discount: test_coupon_after_discount
+  never_negative: test_never_negative
+  backward_compatible: test_backward_compatible
+  rounding: test_rounding
+  added_tests: test_added_tests
+notes: ''

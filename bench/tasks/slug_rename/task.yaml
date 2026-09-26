@@ -1,0 +1,18 @@
+id: slug_rename
+category: api_compat
+prompts:
+- 'Rename slugify to make_slug in the package (lib/strings.py and its caller in cli.py), and improve it:
+
+  collapse repeated dashes into one and strip leading/trailing dashes. External code still imports
+
+  `slugify` from lib.strings, so keep it working as a deprecated alias that emits a DeprecationWarning.
+
+  '
+requirements:
+  make_slug_basic: test_make_slug_basic
+  collapse_dashes: test_collapse_dashes
+  strip_dashes: test_strip_dashes
+  alias_works: test_alias_works
+  alias_warns: test_alias_warns
+  cli_uses_new: test_cli_uses_new
+notes: ''

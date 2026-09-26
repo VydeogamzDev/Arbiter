@@ -1,0 +1,11 @@
+id: greeter_scope_change
+category: scope_change
+prompts:
+- Add a --verbose flag to greet.py that also prints the current timestamp after the greeting.
+- Actually, drop the timestamp idea. Instead, --verbose should print the name in uppercase. Make sure there's no
+  timestamp output anymore.
+requirements:
+  verbose_uppercase: test_verbose_uppercase
+  no_timestamp: test_no_timestamp
+  default_unchanged: test_default_unchanged
+notes: ''

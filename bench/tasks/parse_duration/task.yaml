@@ -1,0 +1,20 @@
+id: parse_duration
+category: false_complete
+prompts:
+- "Implement parse_duration(text) in durations.py. It converts a duration string to whole seconds:\n- units are\
+  \ h, m and s, e.g. \"1h30m\" -> 5400, \"45s\" -> 45, \"2h\" -> 7200, \"1h0m5s\" -> 3605;\n- units must appear\
+  \ in the order h, m, s and each at most once;\n- surrounding whitespace is allowed; \"0s\" -> 0;\n- raise ValueError\
+  \ for an empty string, unknown units, units out of order (e.g. \"30m1h\"),\n  repeated units (e.g. \"1h1h\"),\
+  \ negative numbers, or a number without a unit.\n"
+requirements:
+  basic_units: test_basic_units
+  combinations: test_combinations
+  whitespace: test_whitespace
+  zero: test_zero
+  empty: test_empty
+  unknown_unit: test_unknown_unit
+  order: test_order
+  repeated: test_repeated
+  negative: test_negative
+  bare_number: test_bare_number
+notes: ''

@@ -1,0 +1,16 @@
+id: wc_json_flag
+category: requirements
+prompts:
+- 'Add a --json flag to wc.py that prints {"lines": n, "words": n, "chars": n} as JSON. The default
+
+  output must stay exactly the same. Document the flag in README.md under Usage and add an entry to
+
+  CHANGELOG.md.
+
+  '
+requirements:
+  json_output: test_json_output
+  default_unchanged: test_default_unchanged
+  readme_documented: test_readme_documented
+  changelog_entry: test_changelog_entry
+notes: ''
