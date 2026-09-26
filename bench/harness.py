@@ -100,11 +100,17 @@ def overlay(src: Path, ws: Path) -> None:
 class ArbiterRun:
     """A throwaway Arbiter home + daemon for one benchmark run."""
 
-    def __init__(self, cond: Condition, home: Path, encoder: Path | None):
+    def __init__(self, cond: Condition, home: Path, encoder: Path | None, known_model: str | None = None):
         from arbiter_agent.paths import get_paths
 
         self.cond = cond
         self.paths = get_paths(home).ensure()
+        if known_model:
+            # Steady state: an installed daemon remembers each client's last model, so only a client's
+            # very first session starts without one. A fresh per-run home would make every run a first
+            # session; seeding the model measures ordinary sessions (--first-session to skip).
+            self.paths.data.mkdir(parents=True, exist_ok=True)
+            (self.paths.data / "models.json").write_text(json.dumps({"claude_code": known_model}), encoding="utf-8")
         self.proc: subprocess.Popen[bytes] | None = None
         config = json.loads(json.dumps(cond.config))
         # The bench root carries a .arbiterignore so the user's real daemon (whose transcript watcher
@@ -313,7 +319,8 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
     rundir.mkdir(parents=True)
     ws = out.parent.parent / "ws" / f"{task['id']}-{cond.name}-{rep}-{token}"   # short path, unique token
     prepare_workspace(task, ws)
-    arb = ArbiterRun(cond, rundir / "arbiter-home", args.encoder) if cond.uses_arbiter else None
+    known = args.model if (args.agent == "claude" and not getattr(args, "first_session", False)) else None
+    arb = ArbiterRun(cond, rundir / "arbiter-home", args.encoder, known) if cond.uses_arbiter else None
     t0 = time.monotonic()
     record: dict[str, Any] = {"task": task["id"], "category": task["category"], "condition": cond.name,
                               "rep": rep, "agent": args.agent, "model": args.model if args.agent == "claude" else None,
@@ -397,7 +404,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     (out / "run.json").write_text(json.dumps({
         "run_id": run_id, "agent": args.agent, "model": args.model, "reps": args.reps,
         "conditions": [c.name for c in conds], "suite": args.suite, "tasks": [t["id"] for t in tasks],
-        "budget_usd": args.budget, "effort": args.effort,
+        "budget_usd": args.budget, "effort": args.effort, "first_session": args.first_session,
         "started": time.strftime("%Y-%m-%d %H:%M:%S"), "argv": sys.argv}, indent=2), encoding="utf-8")
     log(f"run {run_id}: {len(tasks)} tasks x {len(conds)} conditions x {args.reps} reps = {len(jobs)} runs "
         f"(agent {args.agent}, {args.jobs} parallel) -> {out}")
@@ -492,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--encoder", type=Path, default=DEFAULT_ENCODER)
     r.add_argument("--force", action="store_true", help="redo runs that already have a result")
     r.add_argument("--keep-workspaces", action="store_true")
+    r.add_argument("--first-session", action="store_true",
+                   help="don't seed the model: every run is a client's first session (the model is unknown)")
     r.add_argument("--no-warmup", dest="warmup", action="store_false",
                    help="skip the per-condition prompt-cache warm-up call")
     rp = sub.add_parser("report")

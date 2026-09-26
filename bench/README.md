@@ -106,7 +106,21 @@ What moved (`bench.analyze`):
 
 `lr_setting_rename`'s hidden test was fixed after the run: it only accepted the deprecation warning at lookup, and the prompt also allows it at `configure()`. All four runs were rescored, and it passes in all of them.
 
-The per-model pack decision is also in `edf9a1c`. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
+The per-model pack decision is also in `edf9a1c`.
+
+### Retest 2: pack at the prompt, "Arbiter runs the tests" note, virtualenv fix (`ef5d520`, 1 rep, same baselines)
+
+| model | suite | cost [95% CI] | calls | agent test runs | success |
+|---|---|---|---|---|---|
+| Sonnet 5 | held-out | **-21%** [-35% to -9%] | -36% | 8 -> 2 | 10/10 |
+| Sonnet 5 | large-repo | **-31%** [-70% to -6%] | -34% | 0 -> 0 | 5/5 |
+| Opus 5.5, model known (normal use) | held-out | **-12%** [-21% to -4%] | -24% | 13 -> 3 | 10/10 |
+| Opus 5.5, model known (normal use) | large-repo | **-10%** [-16% to -3%] | -22% | 5 -> 0 | 5/5 |
+| Opus 5.5, client's first session | held-out / large-repo | -1% / -5% | ±0% | | 10/10, 5/5 |
+
+- **First session vs normal use.** An installed daemon remembers each client's model, so only a client's first session starts without it. In that session Opus gets the map pack and reads every listed file (reads 11 -> 29). Runs seed the model by default to measure ordinary sessions; `--first-session` measures the first one.
+- **Why Opus's saving caps near 10-12%.** About two thirds of an Opus run is Claude Code's own fixed cost: the session-context cache write on the first call (~30%) and its ~30k-token system prompt re-read on every call (~31%). Arbiter cut Opus's calls by 22-24%, which only reaches the other third.
+- **Why Sonnet gains more.** Sonnet's baseline spends more calls on orientation and spot checks, and those are exactly what the map pack and auto-test remove. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
 
 Held-out v1 in detail:
 - 9 of 10 tasks were cheaper and one (`mailer_kwonly`) was even.
