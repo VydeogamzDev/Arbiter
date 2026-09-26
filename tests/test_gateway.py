@@ -323,7 +323,7 @@ def test_auto_context_only_on_new_tasks_and_within_deadline():
         calls.append(ctx["query"])
         return {"pins": [{"path": "src/calc.py"}], "ranked": [{"path": "tests/test_calc.py"}], "k": 4}
 
-    with Harness(config={"retrieval": {"auto_context": True}}) as h:
+    with Harness(config={"retrieval": {"auto_context": True, "auto_context_deadline_ms": 250}}) as h:
         h.engine.context_provider = provider
         first = h.prompt("Fix the addition bug in calc.py.")
         text = first["hookSpecificOutput"]["additionalContext"]

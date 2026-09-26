@@ -532,10 +532,15 @@ class Daemon:
                     channel: str | None = None) -> dict[str, Any]:
         if not self.flags.enabled("event_log"):
             return {"status": "disabled", "response": {}}
-        deadline = Deadline(max(0.1, float(self.config.get("hooks.gating_deadline_ms", 1500)) / 1000.0 * 0.8))
         from arbiter_agent.clients.hook_dialects import adapt_inbound
 
         native_event = (payload.get("hook_event_name") if isinstance(payload, dict) else None) or event_hint
+        wait_s = max(0.1, float(self.config.get("hooks.gating_deadline_ms", 1500)) / 1000.0 * 0.8)
+        if native_event in ("UserPromptSubmit", "userPromptSubmit") and self.config.get("retrieval.auto_context"):
+            # The first prompt of a task may carry the context pack; it saves whole agent turns, so it
+            # gets its own (still bounded) deadline instead of the gating one.
+            wait_s = max(wait_s, float(self.config.get("retrieval.auto_context_deadline_ms", 2500)) / 1000.0 + 0.3)
+        deadline = Deadline(wait_s)
         try:
             payload, event_hint = adapt_inbound(client, payload, event_hint)   # M5 dialects -> canonical shape
         except Exception as exc:            # a dialect bug: record the raw payload, pass the host through

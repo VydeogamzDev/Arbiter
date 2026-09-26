@@ -110,6 +110,7 @@ class SessionEngine:
         # (cwd, context dict, refresh budget s) -> retrieval.context result (set by the daemon; M10.4)
         self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
         self.pack_provider: Callable[[str, dict[str, Any], float, int], dict[str, Any]] | None = None
+        self._late_packs: dict[str, tuple[Any, str, float]] = {}   # sid -> (future, query, started)
         self.cancel = EpochCancel()
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -712,6 +713,9 @@ class SessionEngine:
         name = payload.get("hook_event_name") or event_hint
         etype = hook_event_type(str(name) if name else None)
         native = payload.get("session_id")
+        if native and etype == "post_tool" and f"{client}:{native}" in self._late_packs:
+            text = self._take_late_pack(f"{client}:{native}")
+            return ui_status.hook_context(str(name), text) if text else {}
         if not native or etype not in ("stop", "user_prompt", "session_start"):
             return {}
         sid = f"{client}:{native}"
@@ -901,20 +905,22 @@ class SessionEngine:
             fut = ex.submit(self.context_provider, cwd, qctx, budget * 0.6)
         try:
             res = fut.result(timeout=budget)
+        except cf.TimeoutError:
+            if use_pack:
+                # Late, not lost: under load the pack can miss the prompt hook; it's delivered on the
+                # session's next tool hook instead (seen in benchmark runs, 2026-09-25).
+                self._late_packs[sid] = (fut, query, time.monotonic())
+                self.stats["auto_context_late"] = self.stats.get("auto_context_late", 0) + 1
+            else:
+                self.stats["auto_context_skipped"] = self.stats.get("auto_context_skipped", 0) + 1
+            return None
         except Exception:
             self.stats["auto_context_skipped"] = self.stats.get("auto_context_skipped", 0) + 1
             return None
         finally:
             ex.shutdown(wait=False)
         if use_pack:
-            picks = list(res.get("picks") or [])
-            if not res.get("text"):
-                return None
-            self.misses.surfaced(sid, picks, query)
-            self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
-            self.stats["auto_context_pack_tokens"] = self.stats.get("auto_context_pack_tokens", 0) + int(
-                res.get("tokens") or 0)
-            return str(res["text"])
+            return self._pack_text(sid, res, query)
         pins = [p["path"] for p in res.get("pins", [])]
         ranked = [r["path"] for r in res.get("ranked", [])]
         if not pins and int(res.get("k") or 99) > 6:
@@ -927,6 +933,29 @@ class SessionEngine:
         cap = int(self.config.get("retrieval.auto_context_max_tokens", 150)) * 4
         self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
         return text[:cap]
+
+    def _pack_text(self, sid: str, res: dict[str, Any], query: str) -> str | None:
+        if not res.get("text"):
+            return None
+        self.misses.surfaced(sid, list(res.get("picks") or []), query)
+        self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
+        self.stats["auto_context_pack_tokens"] = self.stats.get("auto_context_pack_tokens", 0) + int(
+            res.get("tokens") or 0)
+        return str(res["text"])
+
+    def _take_late_pack(self, sid: str) -> str | None:
+        """A pack that missed the prompt hook, once it's ready (dropped after 60 s or a new task)."""
+        fut, query, started = self._late_packs[sid]
+        if not fut.done():
+            if time.monotonic() - started > 60:
+                self._late_packs.pop(sid, None)
+            return None
+        self._late_packs.pop(sid, None)
+        try:
+            res = fut.result(timeout=0)
+        except Exception:
+            return None
+        return self._pack_text(sid, res, query)
 
     # ------------------------------------------------------------------ tool API (MCP + CLI)
     def resolve_session(self, params: dict[str, Any]) -> str | None:

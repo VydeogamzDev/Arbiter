@@ -139,7 +139,7 @@ retrieval:
                                 # like ui.inject_status: it adds tokens to prompts and client formats vary
   auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
   auto_context_pack_tokens: 2500   # pre-read task pack: repo map, test command, top files + their imports; 0 = names only
-  auto_context_deadline_ms: 1000   # skipped entirely if the index can't answer in time (a cold small repo takes ~250 ms)
+  auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
 
 review:
   security_floor: high

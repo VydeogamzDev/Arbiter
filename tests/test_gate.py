@@ -366,3 +366,41 @@ def test_observed_mode_keeps_contract_rules_once_contracts_exist():
         h.edit("calc.py", "def add(a, b):\n    return b + a\n")
         h.shell("pytest", "1 passed in 0.01s", exit_code=0)
         assert any("has no contract" in m for m in h.ledger().missing)       # the subtract request
+
+
+# ------------------------------------------------------------------ context pack delivery
+def test_context_pack_on_first_prompt_and_late_pack_on_next_tool_hook():
+    calls = []
+
+    def fast(cwd, ctx, budget, tokens):
+        calls.append(ctx["query"])
+        return {"text": "[Arbiter] Task context, pre-read at this prompt", "picks": ["calc.py"], "tokens": 12}
+
+    with Harness(config={"retrieval": {"auto_context": True}}) as h:
+        h.engine.pack_provider = fast
+        h.engine.context_provider = lambda *a: {}
+        for p, t in CALC.items():
+            h.write(p, t)
+        r = h.prompt("Fix the addition bug in calc.py.")
+        assert "pre-read" in r["hookSpecificOutput"]["additionalContext"]
+        assert h.prompt("yes, go ahead") == {}                 # same task: no second pack
+
+    def slow(cwd, ctx, budget, tokens):
+        time.sleep(0.4)
+        return fast(cwd, ctx, budget, tokens)
+
+    with Harness(config={"retrieval": {"auto_context": True, "auto_context_deadline_ms": 100}}) as h:
+        h.engine.pack_provider = slow
+        h.engine.context_provider = lambda *a: {}
+        for p, t in CALC.items():
+            h.write(p, t)
+        assert h.prompt("Fix the addition bug in calc.py.") == {}     # missed the prompt hook
+        time.sleep(0.6)
+        h.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": "calc.py"}, "tool_response": {},
+                               "tool_use_id": "r1"})
+        late = h.responses[-1]
+        assert late["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+        assert "pre-read" in late["hookSpecificOutput"]["additionalContext"]
+        h.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": "calc.py"}, "tool_response": {},
+                               "tool_use_id": "r2"})
+        assert h.responses[-1] == {}                                   # delivered once
