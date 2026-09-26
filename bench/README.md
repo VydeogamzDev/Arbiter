@@ -76,6 +76,19 @@ Decomposed with `python -m bench.analyze <run>`:
 - **Sonnet 5** thinks 53% longer with the pack in context and runs the tests twice as often (9 -> 19), and it still re-reads files before editing. That outweighs the orientation it skips (21 -> 0).
 - The `full_map` condition tests a map-only pack (`retrieval.auto_context_pack_contents: false`) for that case.
 
+**Map-only pack (`full_map`, same baselines):**
+
+| model | full pack | map-only |
+|---|---|---|
+| Opus 5.5 (held-out) | **-14% cost**, reads 11 -> 5 | +1% cost; reads 11 -> **26** (it opens every ranked file) |
+| Sonnet 5 (quality, 2 reps) | +11% cost, thinking +53% | **+2% cost**, thinking +8% |
+
+The two models need opposite settings: Opus's whole gain comes from the file contents, and those same contents are what make Sonnet think longer. No single setting wins on both.
+
+Sonnet also runs the tests about once more per task whenever the repo map lists test files. That's arguably correct verification, so the map doesn't hide them.
+
+The next step is choosing the pack per model. Codex hook payloads carry the model. For Claude Code, the model is known from the transcript after the first reply, so the pack can arrive with the first tool hook.
+
 Held-out v1 in detail:
 - 9 of 10 tasks were cheaper and one (`mailer_kwonly`) was even.
 - The context pack was delivered in 20/20 runs.
