@@ -1,0 +1,19 @@
+id: mailer_kwonly
+category: api_compat
+prompts:
+- 'In mailer/api.py, make `cc` keyword-only and add a keyword-only `bcc` (a list, default none). External code
+
+  still passes cc positionally as the fourth argument, so keep that working for now but emit a
+
+  DeprecationWarning when it happens. Update every caller in this repo to the new style. The returned message
+
+  must include a "bcc" entry only when bcc recipients were given.
+
+  '
+requirements:
+  keyword_cc: test_keyword_cc
+  bcc_included: test_bcc_included
+  bcc_absent: test_bcc_absent
+  positional_cc_warns: test_positional_cc_warns
+  callers_updated: test_callers_updated
+notes: ''

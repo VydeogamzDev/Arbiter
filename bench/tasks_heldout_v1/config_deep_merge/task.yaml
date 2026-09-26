@@ -1,0 +1,20 @@
+id: config_deep_merge
+category: requirements
+prompts:
+- "Write merge(base, override) in config/merge.py. It returns a merged copy of two nested config dicts:\n- keys\
+  \ in override win;\n- when both values are dicts, merge them recursively;\n- lists from override replace lists\
+  \ from base, except that a key ending in \"+\" (for example \"plugins+\")\n  appends its list to the base list\
+  \ stored under the same key without the \"+\";\n- an override value of None deletes that key from the result;\n\
+  - neither input may be modified, and the result must not share any nested dicts or lists with the inputs.\nThen\
+  \ use it in config/loader.py, so load(paths) merges the files in order (later files win) instead of the\ncurrent\
+  \ shallow update.\n"
+requirements:
+  override_wins: test_override_wins
+  recursive: test_recursive
+  list_replace: test_list_replace
+  append_plus: test_append_plus
+  none_deletes: test_none_deletes
+  inputs_unchanged: test_inputs_unchanged
+  no_shared_structure: test_no_shared_structure
+  loader_uses_merge: test_loader_uses_merge
+notes: ''

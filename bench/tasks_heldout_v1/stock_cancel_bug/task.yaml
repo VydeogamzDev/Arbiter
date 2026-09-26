@@ -1,0 +1,11 @@
+id: stock_cancel_bug
+category: retrieval
+prompts:
+- 'Support ticket: after customers cancel orders, the stock report shows more units available than we physically
+  have. Fix it, and add a regression test.'
+requirements:
+  cancel_restores_exactly: test_cancel_restores_exactly
+  report_consistent: test_report_consistent
+  cancel_is_idempotent: test_cancel_is_idempotent
+  regression_test_added: test_regression_test_added
+notes: ''

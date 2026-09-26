@@ -1,0 +1,19 @@
+id: word_wrap
+category: false_complete
+prompts:
+- "Implement wrap(text, width) in wrapping.py, without using the standard textwrap module:\n- it returns a list\
+  \ of lines, each at most `width` characters;\n- words are separated by any whitespace; lines are filled greedily\
+  \ with words joined by single spaces;\n- a word longer than `width` is split into width-sized chunks;\n- blank\
+  \ lines separate paragraphs: keep one empty string between paragraphs in the output (several blank\n  lines in\
+  \ a row count as one);\n- no line has leading or trailing spaces;\n- width < 1 raises ValueError; empty or whitespace-only\
+  \ text returns [].\n"
+requirements:
+  greedy: test_greedy
+  long_word_split: test_long_word_split
+  paragraphs: test_paragraphs
+  multiple_blank_lines: test_multiple_blank_lines
+  no_edge_spaces: test_no_edge_spaces
+  width_invalid: test_width_invalid
+  empty: test_empty
+  no_textwrap: test_no_textwrap
+notes: ''

@@ -1,0 +1,22 @@
+id: ttl_lru_cache
+category: requirements
+prompts:
+- "Implement TTLCache in cache.py:\n- `TTLCache(capacity, ttl, clock=time.monotonic)`; capacity must be at least\
+  \ 1 and ttl greater than 0,\n  otherwise raise ValueError;\n- `put(key, value)` stores a value; putting an existing\
+  \ key replaces the value and restarts its TTL;\n- `get(key, default=None)` returns the value, or `default` if\
+  \ the key is missing or expired; a successful\n  get marks the key as most recently used, but does not extend\
+  \ its TTL;\n- an entry expires `ttl` seconds after it was last put;\n- when a put would exceed the capacity, evict\
+  \ expired entries first, and only then the least recently\n  used entry;\n- `len(cache)` counts only unexpired\
+  \ entries, and `key in cache` is False for expired keys;\n- `delete(key)` removes a key and returns True, or returns\
+  \ False if it wasn't there.\nAdd tests for it.\n"
+requirements:
+  validation: test_validation
+  replace_restarts_ttl: test_replace_restarts_ttl
+  get_default_and_expiry: test_get_default_and_expiry
+  get_refreshes_recency: test_get_refreshes_recency
+  get_does_not_extend_ttl: test_get_does_not_extend_ttl
+  evicts_expired_first: test_evicts_expired_first
+  len_and_contains: test_len_and_contains
+  delete: test_delete
+  added_tests: test_added_tests
+notes: ''

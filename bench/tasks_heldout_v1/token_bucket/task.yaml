@@ -1,0 +1,18 @@
+id: token_bucket
+category: requirements
+prompts:
+- "Implement TokenBucket in ratelimit.py:\n- TokenBucket(rate, capacity, clock=time.monotonic): `rate` tokens per\
+  \ second, holding at most `capacity`;\n  it starts full; rate and capacity must be positive, otherwise raise ValueError;\n\
+  - try_acquire(n=1) takes n tokens and returns True if they're available; otherwise it returns False and\n  takes\
+  \ nothing;\n- tokens refill continuously, fractions included (at rate 2 per second, 0.25 s adds 0.5 tokens), and\
+  \ never\n  exceed the capacity;\n- n greater than the capacity, or n <= 0, raises ValueError;\n- wait_time(n=1)\
+  \ returns the seconds until n tokens will be available (0.0 if they are available now).\n"
+requirements:
+  starts_full: test_starts_full
+  fail_takes_nothing: test_fail_takes_nothing
+  fractional_refill: test_fractional_refill
+  capped: test_capped
+  invalid_n: test_invalid_n
+  invalid_ctor: test_invalid_ctor
+  wait_time: test_wait_time
+notes: ''

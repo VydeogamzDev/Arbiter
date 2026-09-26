@@ -1,0 +1,15 @@
+id: export_scope_change
+category: scope_change
+prompts:
+- Add a to_json(records) function in export.py that returns a JSON array of the records (a list of dicts). Render
+  date values as DD/MM/YYYY strings.
+- 'Change of plan: dates should be ISO 8601 (YYYY-MM-DD) everywhere. Also add to_csv(records, columns), which returns
+  CSV text with a header row and then one row per record, using those columns in that order and the same date format.
+  A missing value is an empty cell.'
+requirements:
+  json_iso_dates: test_json_iso_dates
+  json_no_ddmm: test_json_no_ddmm
+  csv_header_rows: test_csv_header_rows
+  csv_missing_empty: test_csv_missing_empty
+  csv_iso_dates: test_csv_iso_dates
+notes: ''

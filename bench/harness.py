@@ -33,7 +33,8 @@ from bench import score as scoring
 from bench.conditions import CONDITIONS, PRIMARY, Condition
 
 BENCH = Path(__file__).resolve().parent
-TASKS = BENCH / "tasks"
+TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arbiter)
+SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1"}   # held-out: never tune against these
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -61,9 +62,9 @@ def claude_exe() -> str:
     return found
 
 
-def load_tasks(selected: str) -> list[dict[str, Any]]:
+def load_tasks(selected: str, suite: str = "dev") -> list[dict[str, Any]]:
     tasks = []
-    for d in sorted(p for p in TASKS.iterdir() if (p / "task.yaml").is_file()):
+    for d in sorted(p for p in SUITES[suite].iterdir() if (p / "task.yaml").is_file()):
         t = yaml.safe_load((d / "task.yaml").read_text("utf-8"))
         t["dir"] = d
         tasks.append(t)
@@ -379,7 +380,7 @@ def real_install_sessions() -> int | None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    tasks = load_tasks(args.tasks)
+    tasks = load_tasks(args.tasks, args.suite)
     conds = [CONDITIONS[c] for c in (args.conditions.split(",") if args.conditions != "primary" else PRIMARY)]
     run_id = args.run_id or time.strftime("%Y%m%d-%H%M%S") + f"-{args.agent}"
     out = args.out / run_id
@@ -391,7 +392,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     jobs = [(t, c, r) for r in range(args.reps) for t in tasks for c in conds]
     (out / "run.json").write_text(json.dumps({
         "run_id": run_id, "agent": args.agent, "model": args.model, "reps": args.reps,
-        "conditions": [c.name for c in conds], "tasks": [t["id"] for t in tasks], "budget_usd": args.budget,
+        "conditions": [c.name for c in conds], "suite": args.suite, "tasks": [t["id"] for t in tasks],
+        "budget_usd": args.budget,
         "started": time.strftime("%Y-%m-%d %H:%M:%S"), "argv": sys.argv}, indent=2), encoding="utf-8")
     log(f"run {run_id}: {len(tasks)} tasks x {len(conds)} conditions x {args.reps} reps = {len(jobs)} runs "
         f"(agent {args.agent}, {args.jobs} parallel) -> {out}")
@@ -422,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
                    choices=["claude", "fake-solution", "fake-sloppy", "fake-noop"])
     r.add_argument("--conditions", default="primary", help="comma list, or 'primary' (baseline,full)")
     r.add_argument("--tasks", default="all", help="comma list of task ids or categories, or 'all'")
+    r.add_argument("--suite", default="dev", choices=sorted(SUITES))
     r.add_argument("--reps", type=int, default=1)
     r.add_argument("--jobs", type=int, default=2)
     r.add_argument("--model", default=MODEL)

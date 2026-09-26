@@ -1,0 +1,22 @@
+id: token_hashing
+category: high_risk
+prompts:
+- 'auth/store.py keeps API tokens in plaintext. Change it to store a salted SHA-256 hash instead, in the form
+
+  "sha256$<salt hex>$<hash hex>", with a random salt per token from the secrets module. verify() must use a
+
+  constant-time comparison. Existing records are plaintext tokens and must keep working: when a legacy
+
+  plaintext token verifies successfully, upgrade that record to the hashed form. A failed verification must
+
+  not change anything.
+
+  '
+requirements:
+  no_plaintext: test_no_plaintext
+  verify_ok_and_wrong: test_verify_ok_and_wrong
+  format_and_unique_salt: test_format_and_unique_salt
+  constant_time: test_constant_time
+  legacy_upgrade: test_legacy_upgrade
+  legacy_wrong_unchanged: test_legacy_wrong_unchanged
+notes: ''
