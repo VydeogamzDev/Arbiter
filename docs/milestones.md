@@ -273,7 +273,7 @@ Stage 6 · Build steps 27–28 · Tier T1
   - These are modeled costs, not measured agent runs; measuring real Codex sessions with a large adopted catalog is the next step.
 - **Approval granularity: 0 regressions** (tests): read-only-only proxying without elicitation, per-call approval with exact arguments, no inheritance, sticky denials, adoption refused when approvals can't be mirrored.
 - **Scope: no expansion** (tests): exact launch spec (env, cwd); server-to-client requests refused; remote servers not adoptable yet.
-- **M10.4:** reranked context is live in the tools and host API; prompt auto-injection is implemented but opt-in (`retrieval.auto_context`).
+- **M10.4:** reranked context is live in the tools and host API. Since 2026-09-26, prompt auto-injection is a pre-read context pack and is on by default (`retrieval.auto_context`). The A/B benchmark ([bench/](../bench/README.md)) measured it with Opus 5.5: -26% cost and -38% turns on held-out tasks, with no change in quality.
 
 ## M11 — Hivemind host integration + model/effort bounded auto
 Stage 7 · Build steps 29–30 · Tier T4 (via orchestrator host; decision 0013)

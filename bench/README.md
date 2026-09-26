@@ -68,7 +68,22 @@ Held-out v1 in detail:
 - The context pack was delivered in 20/20 runs.
 - The gate blocked nothing: no run had missing evidence.
 
-Opus 5.5 solved every task in both suites with or without Arbiter, so these numbers measure efficiency only. Measuring quality (fewer false "done" claims or less test tampering) needs tasks that baseline fails.
+Opus 5.5 solved every task in both suites with or without Arbiter, so these numbers measure efficiency only.
+
+### Quality (`tasks_quality_v1/`, frozen in `4f301d0`, 1 rep each)
+
+These 10 tasks sit nearer the model's limit: a 10-rule pricing spec, undo/redo grouping, a four-turn evolving API, cache invalidation, an order-dependent flaky test, path-traversal hardening, a hand-written CSV parser, config docs obligations, month-end recurrence and strict roman numerals.
+
+| effort | success (baseline / Arbiter) | requirement coverage | false "done" | tampering | cost | turns |
+|---|---|---|---|---|---|---|
+| default | 9/10 / 9/10 | 98% / 98% | 1 / 1 | 0 / 0 | -10% | **-32%** |
+| low | 10/10 / 9/10 | 100% / 98% | 0 / 1 | 0 / 0 | -3% | -22% |
+
+**No measurable quality difference.** The only failure was the same task (`fx_flaky_ci`), where the agent kept a cache that ignores which rate table it was given. It happened in 3 of the 4 runs, in both conditions. Whether a run fails there depends on whether the agent removes the cache, not on Arbiter.
+
+**The gate fired once in 40 runs.** At low effort in `todo_four_turns`, it caught a stop with no test run after the last edit; the agent re-ran the tests and passed.
+
+With Opus 5.5 there is almost nothing for the gate to catch. Measuring quality gains needs a weaker model or much longer tasks.
 
 ## Running
 
