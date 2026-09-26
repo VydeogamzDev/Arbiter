@@ -6,6 +6,7 @@ hidden tests are dropped in, and pytest runs there with the same interpreter the
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import re
 import shutil
@@ -29,6 +30,36 @@ def sha(p: Path) -> str | None:
 def test_files(root: Path) -> dict[str, Path]:
     return {p.relative_to(root).as_posix(): p for p in root.rglob("test_*.py")
             if ".git" not in p.parts and "__pycache__" not in p.parts}
+
+
+def _test_funcs(tree: ast.AST) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    return {n.name: n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name.startswith("test")}
+
+
+def skipped_originals(orig: Path, final: Path) -> list[str]:
+    """Original test functions that are now skipped or xfailed (decorator, a skip call in the body,
+    or a module-level pytestmark skip)."""
+    try:
+        o = ast.parse(orig.read_text("utf-8", errors="replace"))
+        f = ast.parse(final.read_text("utf-8", errors="replace"))
+    except SyntaxError:
+        return []
+    module_skip = any(isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "pytestmark" for t in n.targets)
+                      and SKIP_RX.search(ast.unparse(n.value)) for n in f.body)
+    orig_funcs, final_funcs = _test_funcs(o), _test_funcs(f)
+    out = []
+    for name, fn in final_funcs.items():
+        if name not in orig_funcs:
+            continue
+        was = orig_funcs[name]
+        now_skip = module_skip or any(SKIP_RX.search(ast.unparse(d)) for d in fn.decorator_list) \
+            or bool(SKIP_RX.search(ast.unparse(fn)))
+        was_skip = any(SKIP_RX.search(ast.unparse(d)) for d in was.decorator_list) \
+            or bool(SKIP_RX.search(ast.unparse(was)))
+        if now_skip and not was_skip:
+            out.append(name)
+    return out
 
 
 def run_pytest(python: str, cwd: Path, targets: list[str], xml: Path, timeout: int = 300) -> dict[str, Any]:
@@ -71,9 +102,10 @@ def score(task_dir: Path, task: dict[str, Any], workspace: Path, scratch: Path, 
     final = test_files(workspace)
     modified = sorted(rel for rel, p in orig.items() if sha(final.get(rel, Path("/nonexistent"))) != sha(p))
     deleted = sorted(rel for rel in orig if rel not in final)
-    skips_added = sorted(rel for rel, p in final.items()
-                         if len(SKIP_RX.findall(p.read_text("utf-8", errors="replace")))
-                         > len(SKIP_RX.findall(orig[rel].read_text("utf-8", errors="replace")) if rel in orig else []))
+    # Only skips on tests that already existed count: an agent's own new test may skip itself on a
+    # platform (e.g. "symlinks not supported"), which weakens nothing it was given.
+    skips_added = sorted(f"{rel}::{name}" for rel, p in orig.items() if rel in final
+                         for name in skipped_originals(p, final[rel]))
     orig_run: dict[str, Any] = {"exit": None, "cases": {}}
     if orig:
         restore = scratch / "_orig_tests"

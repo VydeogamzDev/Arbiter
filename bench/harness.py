@@ -343,7 +343,7 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
         git(ws, "add", "-A")
         diff = subprocess.run(["git", "diff", "--cached", "--stat", "-p"], cwd=ws, capture_output=True, text=True,
                               encoding="utf-8", errors="replace").stdout
-        (rundir / "final.diff").write_text(diff, encoding="utf-8")
+        (rundir / "final.diff").write_text(diff, encoding="utf-8", newline="\n")
     except Exception:
         pass
     if not args.keep_workspaces:
@@ -418,6 +418,45 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rescore(run_dir: Path) -> int:
+    """Re-score finished runs with the current scorer: each final workspace is rebuilt from the task
+    repo plus the run's saved final.diff (workspaces themselves are deleted after a run)."""
+    import tempfile
+
+    meta = json.loads((run_dir / "run.json").read_text("utf-8"))
+    tasks = {t["id"]: t for t in load_tasks("all", meta.get("suite", "dev"))}
+    n = 0
+    for res in sorted(run_dir.glob("*/*/rep*/result.json")):
+        record = json.loads(res.read_text("utf-8"))
+        diff = res.parent / "final.diff"
+        task = tasks.get(record["task"])
+        if task is None or not diff.is_file():
+            continue
+        with tempfile.TemporaryDirectory(prefix="rescore-") as tmp:
+            ws = Path(tmp) / "ws"
+            prepare_workspace(task, ws)
+            text = diff.read_bytes().decode("utf-8").replace("\r\n", "\n")   # older diffs were saved as CRLF
+            if text.strip():
+                patch = Path(tmp) / "final.patch"
+                patch.write_bytes(text.encode("utf-8"))
+                subprocess.run(["git", "apply", "--whitespace=nowarn", str(patch)], cwd=ws, check=True,
+                               capture_output=True)
+            before = record.get("score") or {}
+            record["score"] = scoring.score(task["dir"], task, ws, Path(tmp) / "scratch", AGENT_PY,
+                                            record.get("final_messages") or [])
+        changed = {k: (before.get(k), record["score"][k]) for k in ("full_pass", "coverage", "tampered")
+                   if before.get(k) != record["score"][k]}
+        if changed:
+            log(f"rescored {record['condition']}/{record['task']}/rep{record['rep']}: {changed}")
+        res.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        n += 1
+    log(f"rescored {n} run(s) in {run_dir}")
+    from bench import report
+
+    report.write(run_dir)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m bench.harness")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -441,9 +480,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--keep-workspaces", action="store_true")
     rp = sub.add_parser("report")
     rp.add_argument("run_dir", type=Path)
+    rs = sub.add_parser("rescore", help="re-score finished runs with the current scorer")
+    rs.add_argument("run_dir", type=Path)
     a = p.parse_args(argv)
     if a.cmd == "run":
         return cmd_run(a)
+    if a.cmd == "rescore":
+        return cmd_rescore(a.run_dir)
     from bench import report
 
     print(report.write(a.run_dir))
