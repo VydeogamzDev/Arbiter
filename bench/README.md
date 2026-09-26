@@ -13,7 +13,12 @@ This benchmark measures real coding-agent outcomes with and without Arbiter. It 
 - `score.py` handles scoring: hidden tests, test integrity and completion claims.
 - `report.py` produces the per-condition table, paired differences against baseline with 95% bootstrap CIs over tasks, and category and task breakdowns.
 
-## Tasks (10)
+## Suites
+
+- `tasks/` (dev, 10 tasks): used while tuning Arbiter.
+- `tasks_heldout_v1/` (10 tasks, frozen in `bbaa486` before any Arbiter run): never tune against it. If a result on it ever drives an Arbiter change, retire it to dev and write `heldout_v2` (`make_heldout_v1.py` is the template).
+
+## Dev tasks (10)
 
 | id | category | what it probes |
 |---|---|---|
@@ -50,12 +55,28 @@ The gateway (M10) is not exercised: these tasks have no upstream MCP servers. It
 - **Cost, turns, tokens and wall time:** taken from `claude -p --output-format json`.
 - **Arbiter activity:** stop blocks, ledger verdicts and sensor rows, read from each run's own database.
 
+## Results (Opus 5.5, `claude -p`)
+
+| suite | runs | cost/run | turns | wall | success |
+|---|---|---|---|---|---|
+| dev, pilot-1 (before the fixes) | 10 vs 10 | **+103%** | +116% | +121% | 10/10 both |
+| dev, pilot-4 (context pack, evidence-first gate) | 10 vs 10 | **-19%** | -40% | -30% | 10/10 both |
+| **held-out v1, 2 reps** | 20 vs 20 | **-26%** [95% CI -40% to -15%] | **-38%** | **-21%** | 20/20 both |
+
+Held-out v1 in detail:
+- 9 of 10 tasks were cheaper and one (`mailer_kwonly`) was even.
+- The context pack was delivered in 20/20 runs.
+- The gate blocked nothing: no run had missing evidence.
+
+Opus 5.5 solved every task in both suites with or without Arbiter, so these numbers measure efficiency only. Measuring quality (fewer false "done" claims or less test tampering) needs tasks that baseline fails.
+
 ## Running
 
 ```bash
 python bench/make_tasks.py
 python -m bench.harness run --agent fake-solution --conditions baseline,full,gate_only,context_only,tools_only,observe_only   # free check
 python -m bench.harness run --agent claude --conditions baseline,full --reps 1 --jobs 2       # paid: Opus 5.5
+python -m bench.harness run --suite heldout_v1 --agent claude --conditions baseline,full --reps 2 --jobs 3
 python -m bench.harness report D:/ArbiterBench/runs/<run_id>
 ```
 
