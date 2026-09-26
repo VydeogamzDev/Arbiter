@@ -37,6 +37,7 @@ def _write_tool(h: Harness, rel: str, text: str) -> dict:
 
 def _cfg(**completion) -> dict:
     return {"completion": {"auto_test": "after_edit", "auto_test_command": f'"{sys.executable}" -m pytest -q',
+                           "auto_test_budget_s": 20.0, "auto_test_stop_budget_s": 20.0,
                            "auto_test_settle_s": 0.0, **completion}}
 
 
@@ -79,8 +80,10 @@ def test_claim_without_tests_is_verified_by_arbiter_not_blocked():
         h.prompt("Fix the addition bug in calc.py.")
         h.baseline()
         h.edit("calc.py", CALC_OK)
+        h.engine.auto_tester.run(h.repo, 60, at_stop=True)       # warm (the harness caps hooks at 5 s)
         assert h.stop("Done. I fixed add().") == {}              # Arbiter ran the tests: verified, no block
         h.edit("calc.py", CALC_BAD)
+        h.engine.auto_tester.run(h.repo, 60, at_stop=True)
         r = h.stop("Done again.")
         assert r.get("decision") == "block" and "failed" in r["reason"]   # a real failure still blocks
 
@@ -138,3 +141,14 @@ def test_transcript_model_reads_the_latest_assistant(tmp_path):
         {"type": "assistant", "message": {"model": "claude-sonnet-5"}}]) + "\n", encoding="utf-8")
     assert transcript_model(str(p)) == "claude-sonnet-5"
     assert transcript_model(str(tmp_path / "missing.jsonl")) is None
+
+
+def test_suite_that_times_out_is_never_auto_run_again(tmp_path):
+    cfg = build_config({"completion": {"auto_test": "after_edit", "auto_test_timeout_s": 1,
+                                       "auto_test_command": f'"{sys.executable}" -c "import time; time.sleep(5)"'}})
+    t = AutoTester(cfg)
+    (tmp_path / "a.py").write_text("x = 1\n")
+    assert t.run(tmp_path, 10, at_stop=True) is not None    # runs, times out
+    (tmp_path / "a.py").write_text("x = 2\n")
+    assert t.run(tmp_path, 10, at_stop=True) is None        # never again, not even at a claim
+    t.stop()

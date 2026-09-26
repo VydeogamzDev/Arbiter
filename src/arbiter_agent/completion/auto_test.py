@@ -65,10 +65,13 @@ def is_code_path(path: str) -> bool:
     return Path(path).suffix.lower() in CODE_SUFFIXES
 
 
-def fingerprint(root: Path) -> str:
-    """A cheap identity of the repo's current files (paths, sizes, mtimes)."""
+def fingerprint(root: Path, recent_s: float = 30.0) -> str:
+    """A cheap identity of the repo's current files: paths, sizes and mtimes, plus the contents of
+    files changed in the last ``recent_s`` seconds (two quick same-size edits can share an mtime tick,
+    which once made a stale PASS look current)."""
     h = hashlib.sha256()
     n = 0
+    now = time.time()
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for f in sorted(filenames):
@@ -80,6 +83,12 @@ def fingerprint(root: Path) -> str:
             except OSError:
                 continue
             h.update(f"{p}|{st.st_size}|{st.st_mtime_ns}\n".encode())
+            if now - st.st_mtime < recent_s and st.st_size < 2_000_000:
+                try:
+                    with open(p, "rb") as fh:
+                        h.update(hashlib.sha256(fh.read()).digest())
+                except OSError:
+                    pass
             n += 1
             if n >= MAX_FINGERPRINT_FILES:
                 return h.hexdigest()
@@ -118,6 +127,7 @@ class AutoTester:
         self._inflight: dict[str, tuple[str, cf.Future[Outcome]]] = {}   # root -> (state, future)
         self._last: dict[str, Outcome] = {}
         self._slow: set[str] = set()
+        self._timed_out: set[str] = set()
         self.stats = {"runs": 0, "reused": 0, "slow_roots": 0}
 
     def mode(self) -> str:
@@ -137,6 +147,8 @@ class AutoTester:
             if res.duration_s > float(self.config.get("completion.auto_test_max_s", 60)) or res.timed_out:
                 self._slow.add(str(root))
                 self.stats["slow_roots"] = len(self._slow)
+            if res.timed_out:
+                self._timed_out.add(str(root))     # never auto-run a suite that can't finish in time
         return out
 
     def run(self, root: str | Path, budget_s: float, *, at_stop: bool = False) -> Outcome | None:
@@ -144,7 +156,7 @@ class AutoTester:
         ``budget_s``). None if there's no test command, the suite is slow, or it isn't done in time."""
         root = Path(root)
         key = str(root)
-        if key in self._slow and not at_stop:
+        if key in self._timed_out or (key in self._slow and not at_stop):
             return None
         command = self.command(root)
         if not command:
