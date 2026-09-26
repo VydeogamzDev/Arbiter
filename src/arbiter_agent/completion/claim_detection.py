@@ -27,10 +27,14 @@ COMPLETION = re.compile(
     r"here'?s (?:a |the )?summary of (?:the |my )?(?:changes|what i (?:changed|did))|"
     r"changes made:|what (?:i|we) changed)\b|"
     r"\bready for (?:review|merge|testing)\b|\bshould now (?:work|pass|be fixed)\b|"
-    r"\b(?:is|are) now (?:fixed|working|resolved|passing)\b|\bhas been (?:fixed|implemented|resolved|added)\b",
+    r"\b(?:is|are) now (?:fixed|working|resolved|passing)\b|\bhas been (?:fixed|implemented|resolved|added)\b|"
+    # Seen in a real Claude Code run (benchmark smoke test, 2026-09-25): "The suite passes now (2 passed)."
+    r"\b(?:test\s+)?suite\s+(?:now\s+)?(?:passes|passed|is (?:now )?(?:green|passing))\b|"
+    r"\b(?:passes|passing|green) now\b|\b\d+ passed\b|"
+    r"\bi (?:fixed|changed|implemented|corrected|replaced|renamed|resolved)\b",
     re.I)
 PARTIAL = re.compile(
-    r"\bnot (?:yet |fully )?(?:done|finished|complete|working|fixed)\b|\bstill (?:need|needs|failing|fails|broken|"
+    r"\bnot (?:yet |fully )?(?:done|finished|complete|working|fixed)\b|\bstill (?:need|needs|fail|failing|fails|broken|"
     r"working on|investigating)\b|\bnext steps?\b|\bremaining (?:work|items|issues|tasks)\b|\bblocked\b|"
     r"\b(?:couldn'?t|could not|unable to|wasn'?t able to|failed to|can'?t)\b|\bpartial(?:ly)?\b|"
     r"\bwork in progress\b|\bwip\b|\bi'?ll (?:now |next )?(?:continue|start|look|investigate)\b|"

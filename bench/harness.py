@@ -103,6 +103,9 @@ class ArbiterRun:
         self.paths = get_paths(home).ensure()
         self.proc: subprocess.Popen[bytes] | None = None
         config = json.loads(json.dumps(cond.config))
+        # The bench root carries a .arbiterignore so the user's real daemon (whose transcript watcher
+        # sees every Claude transcript) skips benchmark workspaces; the per-run daemon must not.
+        config["privacy"] = {"respect_arbiterignore": False}
         if cond.encoder and encoder is not None and encoder.is_dir():
             config.setdefault("semif", {}).update(
                 {"shadow": True, "encoder": {"enabled": True, "model": encoder.as_posix(), "runtime": "onnx"}})
@@ -374,6 +377,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     run_id = args.run_id or time.strftime("%Y%m%d-%H%M%S") + f"-{args.agent}"
     out = args.out / run_id
     out.mkdir(parents=True, exist_ok=True)
+    ignore = out.parent.parent / ".arbiterignore"      # covers <root>/ws and <root>/runs
+    if not ignore.is_file():
+        ignore.write_text("# Arbiter benchmark workspaces: keep them out of the real Arbiter install.\n",
+                          encoding="utf-8")
     jobs = [(t, c, r) for r in range(args.reps) for t in tasks for c in conds]
     (out / "run.json").write_text(json.dumps({
         "run_id": run_id, "agent": args.agent, "model": args.model, "reps": args.reps,

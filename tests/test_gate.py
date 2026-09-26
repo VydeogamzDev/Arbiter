@@ -46,6 +46,10 @@ def _session(h: Harness, *, verified: bool) -> None:
     ("I've fixed the parser, but the CLI still fails.", "uncertain"),
     ("Here is how the scheduler works: it polls.", "not_claim"),
     ("", "not_claim"),
+    ("The suite passes now (2 passed). I haven't committed the change.", "claim"),
+    ("The bug was in `local_date`. I changed `dt - x` to `dt + x`.", "claim"),
+    ("I changed the parser, but 3 tests still fail.", "uncertain"),
+    ("The suite takes 40 seconds to run.", "not_claim"),
 ])
 def test_claim_classification(msg, claim):
     assert classify(msg).claim == claim
