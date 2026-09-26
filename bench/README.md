@@ -61,7 +61,20 @@ The gateway (M10) is not exercised: these tasks have no upstream MCP servers. It
 |---|---|---|---|---|---|
 | dev, pilot-1 (before the fixes) | 10 vs 10 | **+103%** | +116% | +121% | 10/10 both |
 | dev, pilot-4 (context pack, evidence-first gate) | 10 vs 10 | **-19%** | -40% | -30% | 10/10 both |
-| **held-out v1, 2 reps** | 20 vs 20 | **-26%** [95% CI -40% to -15%] | **-38%** | **-21%** | 20/20 both |
+| held-out v1, 2 reps (narrow command allowlist, see below) | 20 vs 20 | -26% [95% CI -40% to -15%] | -38% | -21% | 20/20 both |
+| **held-out v1, fair harness (verify-opus)** | 10 vs 10 | **-14%** [95% CI -26% to -5%] | **-28%** | **-18%** | 10/10 both |
+| quality v1, **Sonnet 5**, fair harness, 2 reps (verify-sonnet5) | 20 vs 20 | **+11%** [95% CI -5% to +27%] | -7% | +30% | 16/20 vs 18/20 |
+
+**Correction (2026-09-26).** The first held-out numbers overstated the gain:
+- The harness's command allowlist denied compound shell commands. Baseline agents lost calls to those denials while orienting (16 denials vs 3 with Arbiter).
+- The first run of each condition paid a cold prompt-cache write.
+
+The harness now allows shell commands and warms the cache per condition. The fair Opus figure is -14%.
+
+Decomposed with `python -m bench.analyze <run>`:
+- **Opus** saves on re-read context (calls -32%, orientation 11 -> 2, reads 11 -> 5).
+- **Sonnet 5** thinks 53% longer with the pack in context and runs the tests twice as often (9 -> 19), and it still re-reads files before editing. That outweighs the orientation it skips (21 -> 0).
+- The `full_map` condition tests a map-only pack (`retrieval.auto_context_pack_contents: false`) for that case.
 
 Held-out v1 in detail:
 - 9 of 10 tasks were cheaper and one (`mailer_kwonly`) was even.
