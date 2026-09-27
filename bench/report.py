@@ -18,7 +18,7 @@ METRICS = [  # key, label, higher_is_better, kind
     ("false_complete", "false 'done' claims", False, "rate"),
     ("tampered", "test tampering", False, "rate"),
     ("cost_usd", "cost per run (USD)", False, "mean"),
-    ("cost_index", "cost index (Codex: input-token units)", False, "mean"),
+    ("cost_index", "cost index (Codex/Pi: input-token units)", False, "mean"),
     ("input_tokens", "input tokens (incl. cached)", False, "mean"),
     ("num_turns", "agent turns", False, "mean"),
     ("output_tokens", "output tokens", False, "mean"),
@@ -68,7 +68,7 @@ def write(run_dir: Path) -> str:
 
     lines = [f"# Arbiter benchmark: {meta.get('run_id', run_dir.name)}", "",
              f"agent `{meta.get('agent')}`"
-             + (f", model `{meta.get('model')}`" if meta.get("agent") in ("claude", "codex") else "")
+             + (f", model `{meta.get('model')}`" if meta.get("agent") in ("claude", "codex", "pi") else "")
              + f", {len(meta.get('tasks', []))} tasks, {meta.get('reps')} rep(s), {len(rows)} runs", ""]
     errors = [r for r in rows if r.get("harness_error") or r.get("score_error")]
     if errors:

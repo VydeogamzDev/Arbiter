@@ -52,6 +52,7 @@ CLIENTS: dict[str, ClientSpec] = {
     "cursor": ClientSpec("cursor", 1, "turn_id", ("run_terminal_cmd", "Shell", "terminal")),
     "vscode": ClientSpec("vscode", 1, "turn_id", ("run_in_terminal", "runInTerminal")),
     "gemini_cli": ClientSpec("gemini_cli", 1, "turn_id", ("run_shell_command",)),
+    "pi": ClientSpec("pi", 1, "turn_id", ("bash", "powershell")),   # via the Pi extension (clients/pi)
     "generic": ClientSpec("generic", 1, "turn_id", ("Bash", "shell")),
 }
 

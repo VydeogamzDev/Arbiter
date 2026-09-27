@@ -3,6 +3,7 @@
     python -m bench.harness run --agent fake-solution            # free: validates plumbing + scoring
     python -m bench.harness run --agent claude --conditions baseline,full --reps 1   # paid (Opus 5.5)
     python -m bench.harness run --agent codex --conditions baseline,full             # ChatGPT plan (gpt-6-luna)
+    python -m bench.harness run --agent pi --conditions baseline,full                # Pi, ChatGPT plan (gpt-6-luna)
     python -m bench.harness report D:/ArbiterBench/runs/<run_id>
 
 Each (task, condition, rep) gets a fresh copy of the task repo (a git repo with one commit), a
@@ -16,6 +17,11 @@ sign-in (so a refreshed token is never written to a copy) and hooks.json (Arbite
 enabled for Arbiter conditions with ``--dangerously-bypass-hook-trust``; in baseline they stay
 untrusted and their MCP server is undefined). The ``arbiter`` MCP server is pointed at the run's own
 home with ``-c``. Ephemeral sessions can't be resumed, so multi-prompt tasks are skipped for Codex.
+
+Pi runs use the real ~/.pi/agent only for its sign-in and model catalog: extensions, skills, prompt
+templates and themes are off (``--no-*``), sessions go to the run folder, and Arbiter conditions
+load Arbiter's Pi extension (clients/pi/arbiter.ts) with ARBITER_HOME set to the run's home. Pi has
+no MCP support, so Arbiter in Pi is hooks only: context pack, post-edit test runs, completion gate.
 """
 
 from __future__ import annotations
@@ -52,6 +58,9 @@ CODEX = os.environ.get("ARBITER_BENCH_CODEX", "D:/ArbiterBench/bin/codex.exe")  
 # ratios of OpenAI's current API price lists. Codex bills this account through a ChatGPT plan, so
 # this compares conditions; it is not a price.
 CODEX_CACHED_RATIO, CODEX_OUTPUT_RATIO = 0.1, 8.0
+PI_INSTALL = Path(os.environ.get("ARBITER_BENCH_PI_INSTALL") or Path.home() / ".pi" / "agent" / "install")
+PI_PROVIDER = "openai-codex"            # Pi's ChatGPT sign-in
+PI_THINKING = "medium"                  # gpt-6-luna's default in Codex, so the two harnesses compare
 AGENT_PY = shutil.which("python") or sys.executable     # the interpreter the agent's shell finds
 # Shell commands are allowed outright. A narrow allowlist denied compound commands such as
 # `git ls-files; Get-Content ...`; baseline agents lost calls to those denials while orienting, which
@@ -328,6 +337,76 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
             "permission_denials": 0, "errors": errors + (1 if code != 0 else 0)}
 
 
+def pi_cli() -> list[str]:
+    """node + Pi's CLI script (not pi.cmd: cmd.exe would mangle multi-line prompts)."""
+    install = PI_INSTALL
+    version = (install / "current-version").read_text("utf-8").strip()
+    pkg = install / "releases" / version / "node_modules" / "@earendil-works" / "pi-coding-agent"
+    meta = json.loads((pkg / "package.json").read_text("utf-8"))
+    binp = meta["bin"] if isinstance(meta["bin"], str) else meta["bin"]["pi"]
+    return [shutil.which("node") or "node", str((pkg / binp).resolve())]
+
+
+def run_pi(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
+           args: argparse.Namespace) -> dict[str, Any]:
+    from arbiter_agent.clients.pi import EXTENSION
+
+    sid = str(uuid.uuid4())
+    base = [*pi_cli(), "--mode", "json", "-p", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
+            "--session-dir", str(rundir / "pi-sessions"), "--session-id", sid,
+            "--model", f"{PI_PROVIDER}/{args.model}", "--thinking", args.effort or PI_THINKING]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")}
+    env.update({"PI_MANAGED_INSTALL_ROOT": str(PI_INSTALL), "PI_OFFLINE": "1", "PI_TELEMETRY": "0"})
+    if arb and arb.cond.hooks:
+        base += ["-e", str(EXTENSION)]
+        env["ARBITER_HOME"] = str(arb.paths.root)
+    turns: list[dict[str, Any]] = []
+    messages: list[str] = []
+    for prompt in task["prompts"]:
+        t0 = time.monotonic()
+        try:
+            proc = subprocess.run([*base, "--", prompt], cwd=ws, env=env, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=args.timeout, stdin=subprocess.DEVNULL)
+            out, err, code = proc.stdout, proc.stderr, proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            out = exc.stdout if isinstance(exc.stdout, str) else ""
+            err, code = "timeout", None
+        with (rundir / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write(out)
+        usage = {"input": 0, "cacheRead": 0, "cacheWrite": 0, "output": 0, "reasoning": 0}
+        tools = errors = 0
+        last = ""
+        for line in out.splitlines():
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if o.get("type") == "message_end" and (o.get("message") or {}).get("role") == "assistant":
+                m = o["message"]
+                for k in usage:
+                    usage[k] += int((m.get("usage") or {}).get(k) or 0)
+                text = "".join(c.get("text", "") for c in m.get("content") or [] if c.get("type") == "text")
+                last = text or last
+                if m.get("stopReason") == "error":
+                    errors += 1
+            elif o.get("type") == "tool_execution_end":
+                tools += 1
+        messages.append(last)
+        turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:], "usage": usage,
+                      "tools": tools, "errors": errors})
+        if code is None:
+            break
+    tot = {k: sum(t["usage"][k] for t in turns) for k in turns[0]["usage"]}
+    index = (tot["input"] + tot["cacheWrite"] + CODEX_CACHED_RATIO * tot["cacheRead"]
+             + CODEX_OUTPUT_RATIO * tot["output"])
+    return {"turns": turns, "final_messages": messages, "cost_usd": None, "cost_index": round(index),
+            "num_turns": sum(t["tools"] for t in turns), "agent_wall_s": round(sum(t["wall_s"] for t in turns), 1),
+            "output_tokens": tot["output"], "reasoning_tokens": tot["reasoning"],
+            "input_tokens": tot["input"] + tot["cacheRead"] + tot["cacheWrite"],
+            "cached_input_tokens": tot["cacheRead"],
+            "permission_denials": 0, "errors": sum(t["errors"] + (1 if t["exit"] != 0 else 0) for t in turns)}
+
+
 def run_fake(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None, variant: str) -> dict[str, Any]:
     """A scripted agent: applies the reference (or sloppy, or no) change and, when the condition has
     hooks, drives the same hook events Claude Code would, so the gate wiring is exercised for free."""
@@ -392,9 +471,9 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
     rundir.mkdir(parents=True)
     ws = out.parent.parent / "ws" / f"{task['id']}-{cond.name}-{rep}-{token}"   # short path, unique token
     prepare_workspace(task, ws)
-    real = args.agent in ("claude", "codex")
+    real = args.agent in ("claude", "codex", "pi")
     known = args.model if (real and not getattr(args, "first_session", False)) else None
-    client = "codex" if args.agent == "codex" else "claude_code"
+    client = {"codex": "codex", "pi": "pi"}.get(args.agent, "claude_code")
     arb = ArbiterRun(cond, rundir / "arbiter-home", args.encoder, known, client) if cond.uses_arbiter else None
     t0 = time.monotonic()
     record: dict[str, Any] = {"task": task["id"], "category": task["category"], "condition": cond.name,
@@ -407,6 +486,8 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
             agent = run_claude(task, ws, rundir, arb, args, token)
         elif args.agent == "codex":
             agent = run_codex(task, ws, rundir, arb, args)
+        elif args.agent == "pi":
+            agent = run_pi(task, ws, rundir, arb, args)
         else:
             agent = run_fake(task, ws, rundir, arb, args.agent.removeprefix("fake-"))
         record["wall_s"] = round(time.monotonic() - t0, 1)
@@ -492,7 +573,7 @@ def real_codex_sessions() -> int | None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     if args.model is None:
-        args.model = CODEX_MODEL if args.agent == "codex" else MODEL
+        args.model = CODEX_MODEL if args.agent in ("codex", "pi") else MODEL
     tasks = load_tasks(args.tasks, args.suite)
     skipped = []
     if args.agent == "codex":
@@ -601,7 +682,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--agent", default="fake-solution",
-                   choices=["claude", "codex", "fake-solution", "fake-sloppy", "fake-noop"])
+                   choices=["claude", "codex", "pi", "fake-solution", "fake-sloppy", "fake-noop"])
     r.add_argument("--conditions", default="primary", help="comma list, or 'primary' (baseline,full)")
     r.add_argument("--tasks", default="all", help="comma list of task ids or categories, or 'all'")
     r.add_argument("--suite", default="dev", choices=sorted(SUITES))
@@ -609,7 +690,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="claude --effort for every run (default: the CLI default)")
     r.add_argument("--reps", type=int, default=1)
     r.add_argument("--jobs", type=int, default=2)
-    r.add_argument("--model", default=None, help=f"default {MODEL} (claude) / {CODEX_MODEL} (codex)")
+    r.add_argument("--model", default=None, help=f"default {MODEL} (claude) / {CODEX_MODEL} (codex, pi)")
     r.add_argument("--budget", type=float, default=4.0, help="per-turn --max-budget-usd cap")
     r.add_argument("--timeout", type=int, default=1500, help="seconds per claude turn")
     r.add_argument("--out", type=Path, default=DEFAULT_OUT)

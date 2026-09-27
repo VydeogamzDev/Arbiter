@@ -183,3 +183,19 @@ def test_hook_deadline_matches_daemon_budgets(monkeypatch):
     assert hook_deadline("PostToolUse") == 4.0 and hook_deadline("Stop") == 4.6
     assert hook_deadline("UserPromptSubmit") == 3.0 and hook_deadline("PreToolUse") == DEFAULT_DEADLINE_S
     assert max(hook_deadline(e) for e in ("PostToolUse", "Stop", "UserPromptSubmit")) < 5.0   # client hook timeout
+
+
+def test_pi_client_over_http(daemon, tmp_path):
+    """Pi's extension (clients/pi/arbiter.ts) posts Claude-Code-shaped payloads to /hook/pi/<Event>."""
+    from arbiter_agent.clients.pi import EXTENSION
+
+    assert EXTENSION.is_file() and "/hook/${CLIENT}/" in EXTENSION.read_text("utf-8")
+    home, _ = daemon
+    with FakeHost(home, client="pi", transport="http", cwd=str(tmp_path), transcript_dir=tmp_path) as h:
+        h.session_start()
+        h.prompt("please fix the parser")
+        h.tool("pytest -q", "3 passed in 0.10s", 0)
+        h.stop("Done. All tests pass.")
+    assert all(c.ok for c in h.calls), [c.error for c in h.calls]
+    st = status(home)
+    assert st["ingest"].get("stored") == 5 and not st["ingest"].get("rejected")
