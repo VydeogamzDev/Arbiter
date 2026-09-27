@@ -4,6 +4,8 @@ MOCK_REPLIES   '|'-separated assistant texts, cycled per text response.
 MOCK_TOOL_CALL 'name::json-args' -> first response in a turn is that function call;
                once a function_call_output is present, a text reply is returned.
 MOCK_LOG       jsonl request log.
+MOCK_DUMP      directory: every full request body is written there as req-<n>.json.
+MOCK_TOOL_CALL may start with "custom:" for a freeform custom tool call (e.g. apply_patch).
 """
 import itertools
 import json
@@ -43,6 +45,12 @@ class H(BaseHTTPRequestHandler):
         except Exception:
             req = {}
         inp = req.get("input", []) or []
+        dump = os.environ.get("MOCK_DUMP")
+        if dump:
+            os.makedirs(dump, exist_ok=True)
+            k = len(os.listdir(dump))
+            with open(os.path.join(dump, "req-%03d.json" % k), "w", encoding="utf-8") as f:
+                json.dump(req, f)
         tools = [t.get("name") or t.get("type") for t in (req.get("tools") or [])]
         if LOG:
             with open(LOG, "a", encoding="utf-8") as f:
@@ -54,12 +62,17 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self._ev("response.created", {"response": {"id": rid, "status": "in_progress", "output": []}})
 
-        has_output = any(isinstance(i, dict) and i.get("type") == "function_call_output" for i in inp)
+        has_output = any(isinstance(i, dict) and i.get("type") in ("function_call_output", "custom_tool_call_output")
+                         for i in inp)
         tool = os.environ.get("MOCK_TOOL_CALL")
         if tool and not has_output:
             name, args = tool.split("::", 1)
-            item = {"type": "function_call", "id": "fc_" + rid, "call_id": "call_" + rid,
-                    "name": name, "arguments": args, "status": "completed"}
+            if name.startswith("custom:"):
+                item = {"type": "custom_tool_call", "id": "ctc_" + rid, "call_id": "call_" + rid,
+                        "name": name[len("custom:"):], "input": args, "status": "completed"}
+            else:
+                item = {"type": "function_call", "id": "fc_" + rid, "call_id": "call_" + rid,
+                        "name": name, "arguments": args, "status": "completed"}
         else:
             text = next(REPLIES)
             item = {"type": "message", "id": "msg_" + rid, "role": "assistant", "status": "completed",

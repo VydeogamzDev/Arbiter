@@ -11,7 +11,7 @@ import sys
 
 from arbiter_agent.daemon.diagnostics import record_failopen
 from arbiter_agent.paths import ArbiterPaths, get_paths
-from arbiter_agent.shims.common import DEFAULT_DEADLINE_S, forward_hook
+from arbiter_agent.shims.common import forward_hook, hook_deadline
 
 MAX_STDIN = 8 * 1024 * 1024
 
@@ -29,7 +29,7 @@ def main(client: str, event: str | None, paths: ArbiterPaths | None = None) -> i
         return 0
     try:
         response, client_obj = forward_hook(None, paths, "hook_cli", client, payload, surface="hook", event=event,
-                                            deadline=DEFAULT_DEADLINE_S, background_launch=False)
+                                            deadline=hook_deadline(event), background_launch=False)
         if client_obj is not None:
             client_obj.close()
         if response:

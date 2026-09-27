@@ -11,6 +11,18 @@ from arbiter_agent.daemon.diagnostics import record_failopen
 from arbiter_agent.paths import ArbiterPaths
 
 DEFAULT_DEADLINE_S = float(os.environ.get("ARBITER_HOOK_DEADLINE_MS", "1500")) / 1000.0
+# The daemon gives three events longer, bounded budgets: the prompt's context pack, Arbiter's own test
+# run after an edit, and the test run at a completion claim. A shim that gave up at 1.5 s dropped
+# those results for MCP-tool and command hooks (found benchmarking Codex, 2026-09-27). All stay under
+# the clients' 5 s hook timeout.
+EVENT_DEADLINES_S = {"userpromptsubmit": 3.0, "beforesubmitprompt": 3.0, "posttooluse": 4.0, "aftertool": 4.0,
+                     "stop": 4.6, "afteragent": 4.6}
+
+
+def hook_deadline(event: str | None) -> float:
+    if os.environ.get("ARBITER_HOOK_DEADLINE_MS"):
+        return DEFAULT_DEADLINE_S
+    return EVENT_DEADLINES_S.get(str(event or "").lower(), DEFAULT_DEADLINE_S)
 
 
 def trigger_launch(paths: ArbiterPaths, *, background: bool = True) -> None:

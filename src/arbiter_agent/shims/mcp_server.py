@@ -25,7 +25,7 @@ from arbiter_agent import __version__
 from arbiter_agent.daemon.client import DaemonClient, DaemonError, DaemonUnavailable
 from arbiter_agent.daemon.diagnostics import record_failopen
 from arbiter_agent.paths import ArbiterPaths, get_paths
-from arbiter_agent.shims.common import DEFAULT_DEADLINE_S, forward_hook, trigger_launch
+from arbiter_agent.shims.common import forward_hook, hook_deadline, trigger_launch
 
 SUPPORTED_PROTOCOLS = ("2024-11-05", "2025-03-26", "2025-06-18")
 LATEST_PROTOCOL = SUPPORTED_PROTOCOLS[-1]
@@ -306,7 +306,7 @@ class MCPShim:
                 self.last_session = f"{client}:{args['session_id']}"
             with self._lock:
                 response, self._client = forward_hook(self._client, self.paths, "mcp_shim", client, args,
-                                                      surface="mcp", event=event, deadline=DEFAULT_DEADLINE_S)
+                                                      surface="mcp", event=event, deadline=hook_deadline(event))
             return self._text(json.dumps(response) if response else "")
         if name in ("arbiter_status", "arbiter_ping"):
             try:

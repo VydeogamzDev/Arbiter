@@ -172,3 +172,14 @@ def test_daemon_crash_never_blocks_fake_host(home, tmp_path):
     finally:
         host.close()
         lifecycle.stop(home, timeout=5)
+
+
+def test_hook_deadline_matches_daemon_budgets(monkeypatch):
+    """The shim must wait for the daemon's longer budgets (pack, post-edit and claim-time test runs),
+    or MCP-tool/command hook results are dropped (Codex benchmark, 2026-09-27)."""
+    from arbiter_agent.shims.common import DEFAULT_DEADLINE_S, hook_deadline
+
+    monkeypatch.delenv("ARBITER_HOOK_DEADLINE_MS", raising=False)
+    assert hook_deadline("PostToolUse") == 4.0 and hook_deadline("Stop") == 4.6
+    assert hook_deadline("UserPromptSubmit") == 3.0 and hook_deadline("PreToolUse") == DEFAULT_DEADLINE_S
+    assert max(hook_deadline(e) for e in ("PostToolUse", "Stop", "UserPromptSubmit")) < 5.0   # client hook timeout
