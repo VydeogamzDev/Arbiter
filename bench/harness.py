@@ -2,6 +2,7 @@
 
     python -m bench.harness run --agent fake-solution            # free: validates plumbing + scoring
     python -m bench.harness run --agent claude --conditions baseline,full --reps 1   # paid (Opus 5.5)
+    python -m bench.harness run --agent codex --conditions baseline,full             # ChatGPT plan (gpt-6-luna)
     python -m bench.harness report D:/ArbiterBench/runs/<run_id>
 
 Each (task, condition, rep) gets a fresh copy of the task repo (a git repo with one commit), a
@@ -9,6 +10,12 @@ fresh Arbiter home and daemon, and its own Claude settings/MCP files. Nothing to
 real Arbiter, Claude or Codex configuration: user settings are excluded with
 ``--setting-sources project`` and MCP servers with ``--strict-mcp-config``. Claude's per-project
 transcript folder for each workspace is copied into the results and then removed.
+
+Codex runs use ``codex exec --ignore-user-config --ephemeral``: the real CODEX_HOME supplies only the
+sign-in (so a refreshed token is never written to a copy) and hooks.json (Arbiter's MCP-tool hooks,
+enabled for Arbiter conditions with ``--dangerously-bypass-hook-trust``; in baseline they stay
+untrusted and their MCP server is undefined). The ``arbiter`` MCP server is pointed at the run's own
+home with ``-c``. Ephemeral sessions can't be resumed, so multi-prompt tasks are skipped for Codex.
 """
 
 from __future__ import annotations
@@ -39,6 +46,12 @@ SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
+CODEX_MODEL = "gpt-6-luna"
+CODEX = os.environ.get("ARBITER_BENCH_CODEX", "D:/ArbiterBench/bin/codex.exe")   # the desktop app's bundled engine
+# Cost index for Codex runs, in uncached-input-token units: cached input 0.1x and output 8x input, the
+# ratios of OpenAI's current API price lists. Codex bills this account through a ChatGPT plan, so
+# this compares conditions; it is not a price.
+CODEX_CACHED_RATIO, CODEX_OUTPUT_RATIO = 0.1, 8.0
 AGENT_PY = shutil.which("python") or sys.executable     # the interpreter the agent's shell finds
 # Shell commands are allowed outright. A narrow allowlist denied compound commands such as
 # `git ls-files; Get-Content ...`; baseline agents lost calls to those denials while orienting, which
@@ -100,7 +113,8 @@ def overlay(src: Path, ws: Path) -> None:
 class ArbiterRun:
     """A throwaway Arbiter home + daemon for one benchmark run."""
 
-    def __init__(self, cond: Condition, home: Path, encoder: Path | None, known_model: str | None = None):
+    def __init__(self, cond: Condition, home: Path, encoder: Path | None, known_model: str | None = None,
+                 client: str = "claude_code"):
         from arbiter_agent.paths import get_paths
 
         self.cond = cond
@@ -110,7 +124,7 @@ class ArbiterRun:
             # very first session starts without one. A fresh per-run home would make every run a first
             # session; seeding the model measures ordinary sessions (--first-session to skip).
             self.paths.data.mkdir(parents=True, exist_ok=True)
-            (self.paths.data / "models.json").write_text(json.dumps({"claude_code": known_model}), encoding="utf-8")
+            (self.paths.data / "models.json").write_text(json.dumps({client: known_model}), encoding="utf-8")
         self.proc: subprocess.Popen[bytes] | None = None
         config = json.loads(json.dumps(cond.config))
         # The bench root carries a .arbiterignore so the user's real daemon (whose transcript watcher
@@ -260,6 +274,60 @@ def run_claude(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | N
             "errors": sum(1 for t in turns if t["exit"] != 0 or t["is_error"])}
 
 
+def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
+              args: argparse.Namespace) -> dict[str, Any]:
+    from arbiter_agent.clients.client_env import arbiter_command
+
+    argv = [CODEX, "exec", "--ignore-user-config", "--ephemeral", "--json", "-m", args.model,
+            "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-C", str(ws),
+            *(["-c", f'model_reasoning_effort="{args.effort}"'] if args.effort else [])]
+    if arb and arb.cond.uses_arbiter:
+        cmd = arbiter_command(arb.paths.root)
+        argv += ["-c", f"mcp_servers.arbiter.command={json.dumps(cmd[0])}",
+                 "-c", f"mcp_servers.arbiter.args={json.dumps(cmd[1:])}"]
+        if arb.cond.hooks:
+            argv.append("--dangerously-bypass-hook-trust")
+    argv += json.loads(os.environ.get("ARBITER_BENCH_CODEX_ARGS", "[]"))   # e.g. a mock model provider
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")}
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run([*argv, task["prompts"][0]], cwd=ws, env=env, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=args.timeout, stdin=subprocess.DEVNULL)
+        out, err, code = proc.stdout, proc.stderr, proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout if isinstance(exc.stdout, str) else ""
+        err, code = "timeout", None
+    (rundir / "events.jsonl").write_text(out, encoding="utf-8")
+    usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_output_tokens": 0}
+    messages: list[str] = []
+    tools = errors = 0
+    for line in out.splitlines():
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if o.get("type") == "turn.completed":
+            for k in usage:
+                usage[k] += int((o.get("usage") or {}).get(k) or 0)
+        elif o.get("type") == "turn.failed":
+            errors += 1
+        elif o.get("type") == "item.completed":
+            item = o.get("item") or {}
+            if item.get("type") == "agent_message":
+                messages.append(str(item.get("text") or ""))
+            elif item.get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
+                tools += 1
+    uncached = usage["input_tokens"] - usage["cached_input_tokens"]
+    index = uncached + CODEX_CACHED_RATIO * usage["cached_input_tokens"] + CODEX_OUTPUT_RATIO * usage["output_tokens"]
+    wall = round(time.monotonic() - t0, 1)
+    return {"turns": [{"exit": code, "wall_s": wall, "stderr": err[-2000:], "usage": usage}],
+            "final_messages": [messages[-1] if messages else ""], "cost_usd": None,
+            "cost_index": round(index), "num_turns": tools, "agent_wall_s": wall,
+            "output_tokens": usage["output_tokens"], "reasoning_tokens": usage["reasoning_output_tokens"],
+            "input_tokens": usage["input_tokens"], "cached_input_tokens": usage["cached_input_tokens"],
+            "permission_denials": 0, "errors": errors + (1 if code != 0 else 0)}
+
+
 def run_fake(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None, variant: str) -> dict[str, Any]:
     """A scripted agent: applies the reference (or sloppy, or no) change and, when the condition has
     hooks, drives the same hook events Claude Code would, so the gate wiring is exercised for free."""
@@ -324,17 +392,21 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
     rundir.mkdir(parents=True)
     ws = out.parent.parent / "ws" / f"{task['id']}-{cond.name}-{rep}-{token}"   # short path, unique token
     prepare_workspace(task, ws)
-    known = args.model if (args.agent == "claude" and not getattr(args, "first_session", False)) else None
-    arb = ArbiterRun(cond, rundir / "arbiter-home", args.encoder, known) if cond.uses_arbiter else None
+    real = args.agent in ("claude", "codex")
+    known = args.model if (real and not getattr(args, "first_session", False)) else None
+    client = "codex" if args.agent == "codex" else "claude_code"
+    arb = ArbiterRun(cond, rundir / "arbiter-home", args.encoder, known, client) if cond.uses_arbiter else None
     t0 = time.monotonic()
     record: dict[str, Any] = {"task": task["id"], "category": task["category"], "condition": cond.name,
-                              "rep": rep, "agent": args.agent, "model": args.model if args.agent == "claude" else None,
+                              "rep": rep, "agent": args.agent, "model": args.model if real else None,
                               "workspace": str(ws)}
     try:
         if arb:
             arb.start()
         if args.agent == "claude":
             agent = run_claude(task, ws, rundir, arb, args, token)
+        elif args.agent == "codex":
+            agent = run_codex(task, ws, rundir, arb, args)
         else:
             agent = run_fake(task, ws, rundir, arb, args.agent.removeprefix("fake-"))
         record["wall_s"] = round(time.monotonic() - t0, 1)
@@ -364,8 +436,9 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
         shutil.rmtree(ws, ignore_errors=True)
     (rundir / "result.json").write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
     s = record.get("score") or {}
+    cost = f"{record['cost_index']}idx" if record.get("cost_index") is not None else f"${record.get('cost_usd')}"
     log(f"{cond.name:13s} {task['id']:22s} rep{rep}  pass={s.get('full_pass')} cov={s.get('coverage')} "
-        f"tamper={s.get('tampered')} cost=${record.get('cost_usd')} turns={record.get('num_turns')} "
+        f"tamper={s.get('tampered')} cost={cost} turns={record.get('num_turns')} "
         f"wall={record.get('wall_s')}s" + ("  HARNESS ERROR" if "harness_error" in record else ""))
     return record
 
@@ -395,8 +468,38 @@ def real_install_sessions() -> int | None:
         return None
 
 
+def real_codex_sessions() -> int | None:
+    """Codex sessions in the user's real Arbiter install (read-only). Benchmark Codex runs define
+    their own ``arbiter`` MCP server, so this should only grow with the user's own Codex use."""
+    from arbiter_agent.paths import get_paths
+    from arbiter_agent.state.store import connect
+
+    saved = os.environ.pop("ARBITER_HOME", None)
+    try:
+        db = get_paths(None).db
+    finally:
+        if saved is not None:
+            os.environ["ARBITER_HOME"] = saved
+    try:
+        c = connect(db, readonly=True)
+        try:
+            return int(c.execute("SELECT COUNT(*) FROM client_session WHERE client_id = 'codex'").fetchone()[0])
+        finally:
+            c.close()
+    except Exception:
+        return None
+
+
 def cmd_run(args: argparse.Namespace) -> int:
+    if args.model is None:
+        args.model = CODEX_MODEL if args.agent == "codex" else MODEL
     tasks = load_tasks(args.tasks, args.suite)
+    skipped = []
+    if args.agent == "codex":
+        skipped = [t["id"] for t in tasks if len(t["prompts"]) > 1]
+        tasks = [t for t in tasks if len(t["prompts"]) == 1]
+        if skipped:
+            log(f"codex: skipping multi-prompt task(s) {', '.join(skipped)} (ephemeral sessions can't resume)")
     conds = [CONDITIONS[c] for c in (args.conditions.split(",") if args.conditions != "primary" else PRIMARY)]
     run_id = args.run_id or time.strftime("%Y%m%d-%H%M%S") + f"-{args.agent}"
     out = args.out / run_id
@@ -410,10 +513,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         "run_id": run_id, "agent": args.agent, "model": args.model, "reps": args.reps,
         "conditions": [c.name for c in conds], "suite": args.suite, "tasks": [t["id"] for t in tasks],
         "budget_usd": args.budget, "effort": args.effort, "first_session": args.first_session,
+        "skipped_tasks": skipped,
         "started": time.strftime("%Y-%m-%d %H:%M:%S"), "argv": sys.argv}, indent=2), encoding="utf-8")
     log(f"run {run_id}: {len(tasks)} tasks x {len(conds)} conditions x {args.reps} reps = {len(jobs)} runs "
         f"(agent {args.agent}, {args.jobs} parallel) -> {out}")
     before = real_install_sessions()
+    codex_before = real_codex_sessions() if args.agent == "codex" else None
+    if args.agent == "codex":   # the hooks Arbiter conditions run with come from the real hooks.json
+        hooks = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "hooks.json"
+        meta = json.loads((out / "run.json").read_text("utf-8"))
+        meta["codex_hooks_json"] = json.loads(hooks.read_text("utf-8")) if hooks.is_file() else None
+        (out / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if args.agent == "claude" and args.warmup:
         # One throwaway call per condition writes Claude Code's system-prompt prefix into the prompt
         # cache, so no measured run pays the cold-cache write (~30k tokens; it landed on two baseline
@@ -434,6 +544,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     leaked = None if before is None or after is None else after - before
     meta = json.loads((out / "run.json").read_text("utf-8"))
     meta["real_install_bench_sessions_added"] = leaked
+    if codex_before is not None:
+        codex_after = real_codex_sessions()
+        meta["real_install_codex_sessions_added"] = None if codex_after is None else codex_after - codex_before
     (out / "run.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if leaked:
         log(f"WARNING: the real Arbiter install recorded {leaked} benchmark session(s); isolation failed")
@@ -488,7 +601,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--agent", default="fake-solution",
-                   choices=["claude", "fake-solution", "fake-sloppy", "fake-noop"])
+                   choices=["claude", "codex", "fake-solution", "fake-sloppy", "fake-noop"])
     r.add_argument("--conditions", default="primary", help="comma list, or 'primary' (baseline,full)")
     r.add_argument("--tasks", default="all", help="comma list of task ids or categories, or 'all'")
     r.add_argument("--suite", default="dev", choices=sorted(SUITES))
@@ -496,7 +609,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="claude --effort for every run (default: the CLI default)")
     r.add_argument("--reps", type=int, default=1)
     r.add_argument("--jobs", type=int, default=2)
-    r.add_argument("--model", default=MODEL)
+    r.add_argument("--model", default=None, help=f"default {MODEL} (claude) / {CODEX_MODEL} (codex)")
     r.add_argument("--budget", type=float, default=4.0, help="per-turn --max-budget-usd cap")
     r.add_argument("--timeout", type=int, default=1500, help="seconds per claude turn")
     r.add_argument("--out", type=Path, default=DEFAULT_OUT)
