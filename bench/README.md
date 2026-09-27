@@ -226,3 +226,24 @@ Harness and Arbiter together, on the tasks both ran (cost index, sums):
 
 Pi's fixed context is small, so exploration is most of a baseline run's cost, and that is what the
 context pack replaces (tool calls halve).
+
+## Pi large-repo ablation, after the pack/test-window fixes (2026-09-27)
+
+`--agent pi --suite largerepo_v1 --reps 3`, gpt-6-luna, 4 conditions, 60 runs, 0 errors. Fixes in
+af0101a: pack heading no longer calls files a snapshot that may change; weak picks in large repos
+shown as outlines; Pi's post-edit test window 8 s.
+
+| condition | cost index (sum) | vs baseline | 95% CI (tasks) | input tokens | output | tool calls | success |
+|---|---|---|---|---|---|---|---|
+| baseline | 290k | | | 511k | 9.7k | 136 | 15/15 |
+| full | 130k | **-55%** | [-67%, -37%] | -70% | -33% | 61 | 15/15 |
+| pack_only | 156k | -46% | [-64%, -20%] | -63% | -18% | 84 | 15/15 |
+| tests_gate_only | 247k | -15% | [-22%, -2%] | -19% | -10% | 114 | 15/15 |
+
+The two parts add up (0.54 x 0.85 = 0.46 of baseline, measured 0.45). No stop blocks, false "done"
+claims or tampering anywhere, so the gate's share here is nil; tests_gate_only's saving is the
+agent no longer running the tests itself (own pytest runs: baseline 14, pack_only 13, full 3,
+tests_gate_only 0; Arbiter results delivered: full 20, tests_gate_only 26). Re-reads of files the
+pack showed in full: pack_only 18, full 13 in 15 runs (1-rep run before the fix: 7 in 5).
+lr_rounding_cent's expensive baseline is consistent (34-48k over 3 reps), not an outlier: its
+first search returns ~46k characters. Wall time: full -3%, tests_gate_only +12%.
