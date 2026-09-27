@@ -61,7 +61,14 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("tools_only", "Arbiter MCP tools only (search, contracts, verify, finish check); no hooks, "
                             "so nothing is enforced",
               mcp=True),
-    Condition("observe_only", "hooks record everything but change nothing (annotate, nothing injected): "
+    # Hook-only ablations (Pi has no MCP): the context pack alone, and Arbiter's own test runs plus
+    # the completion gate alone.
+    Condition("pack_only", "context pack + status summaries; no Arbiter test runs, gate annotates only",
+              hooks=ALL_HOOKS, encoder=True, config=_merge(CONTEXT, {"completion": {"auto_test": "off"}})),
+    Condition("tests_gate_only", "Arbiter's post-edit test runs + completion gate in block mode; no context pack",
+              hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, {"retrieval": {"auto_context": False}, "ui": {"inject_status": True}})),
+    Condition("observe_only","hooks record everything but change nothing (annotate, nothing injected): "
                               "pure overhead",
               hooks=ALL_HOOKS),
 ]}

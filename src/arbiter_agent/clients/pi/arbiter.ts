@@ -19,8 +19,9 @@ import * as path from "node:path";
 
 const CLIENT = "pi";
 const TOKEN_HEADER = "X-Arbiter-Token";
-// Mirrors the daemon's budgets (pack, post-edit test run, test run at a claim); Pi has no hook timeout.
-const DEADLINE_MS: Record<string, number> = { UserPromptSubmit: 3000, PostToolUse: 4000, PostToolUseFailure: 4000,
+// Mirrors the daemon's budgets (pack, post-edit test run, test run at a claim). Pi has no hook timeout,
+// so the post-edit wait is longer than other clients get (completion.auto_test_client_budget_s.pi).
+const DEADLINE_MS: Record<string, number> = { UserPromptSubmit: 3000, PostToolUse: 9500, PostToolUseFailure: 9500,
   Stop: 4600 };
 const MAX_STOP_BLOCKS = 3;
 

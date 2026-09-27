@@ -543,7 +543,9 @@ class Daemon:
         auto_test = str(self.config.get("completion.auto_test", "off"))
         if native_event in ("PostToolUse", "postToolUse") and auto_test == "after_edit":
             # Arbiter's own test run after an edit replaces an agent call; it gets its own bounded wait.
-            wait_s = max(wait_s, float(self.config.get("completion.auto_test_budget_s", 3.0))
+            from arbiter_agent.completion.auto_test import edit_budget
+
+            wait_s = max(wait_s, edit_budget(self.config, client)
                          + float(self.config.get("completion.auto_test_settle_s", 0.2)) + 0.4)
         if native_event in ("Stop", "stop") and auto_test in ("after_edit", "at_stop"):
             wait_s = max(wait_s, float(self.config.get("completion.auto_test_stop_budget_s", 4.0)) + 0.5)

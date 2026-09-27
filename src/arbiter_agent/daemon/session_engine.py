@@ -1101,7 +1101,7 @@ class SessionEngine:
             return None
         if sid not in self._test_pending:
             return None
-        budget = min(float(self.config.get("completion.auto_test_budget_s", 3.0)), deadline.remaining() - 0.2)
+        budget = min(auto_test.edit_budget(self.config, sid.split(":", 1)[0]), deadline.remaining() - 0.2)
         out = self.auto_tester.run(root, max(0.0, budget))
         if out is None or self.auto_tester.ready(root) is not out:
             return None                                # still running, or the files moved on: later hook

@@ -36,6 +36,17 @@ CODE_SUFFIXES = {".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".
                  ".json", ".yaml", ".yml"}
 
 
+def edit_budget(config: Any, client: str | None) -> float:
+    """Seconds an edit's hook waits for Arbiter's test run. Hosts that kill hooks after 5 s get
+    ``auto_test_budget_s``; a client listed in ``auto_test_client_budget_s`` gets its own. A result
+    that misses the window arrives too late: the agent runs the tests itself (5 of 15 Pi runs with
+    a 3 s window, under load, 2026-09-27)."""
+    per = config.get("completion.auto_test_client_budget_s") or {}
+    if client and isinstance(per, dict) and per.get(client) is not None:
+        return float(per[client])
+    return float(config.get("completion.auto_test_budget_s", 3.0))
+
+
 def project_python(root: Path) -> str:
     """The repo's own interpreter when it has a virtualenv (.venv, venv, env), else plain `python`.
     Found on a real install: the system Python couldn't import the project under test."""

@@ -150,6 +150,7 @@ class RetrievalService:
             return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
 
         picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
+        full = context_pack.core(ranked, pins, deps, tests_of, set(files))
         root = Path(ident.root)
 
         def read(rel: str) -> str | None:
@@ -173,7 +174,7 @@ class RetrievalService:
                         "tool output.")
         text = context_pack.build(root, files, picks, read, max_tokens,
                                   contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)),
-                                  test_note=note)
+                                  test_note=note, full=full)
         map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False, test_note=note)
         return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})

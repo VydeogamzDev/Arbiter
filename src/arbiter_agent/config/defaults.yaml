@@ -168,6 +168,8 @@ completion:
                                  # with the edit's hook, and at a claim with no fresh run) | at_stop | off
   auto_test_command: null        # override the detected command (pytest, npm test, cargo test, go test)
   auto_test_budget_s: 3.0        # wait this long in the edit's hook; later results come with a later hook
+  auto_test_client_budget_s:     # per client, where the host allows a longer hook (Pi's extension has no host
+    pi: 8.0                      # timeout); a result that misses the window makes the agent run the tests itself
   auto_test_stop_budget_s: 4.0   # at a completion claim
   auto_test_timeout_s: 120       # kill a run after this
   auto_test_max_s: 60.0          # a suite slower than this is not auto-run after edits again
