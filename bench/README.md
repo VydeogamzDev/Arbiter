@@ -201,3 +201,28 @@ No tampering or false "done" claims in either condition; no leaks into the real 
 loss (mailer_kwonly, +44%) re-read the files the pack already held and made three extra edits.
 Codex's fixed context is ~15k tokens (Claude Code: ~39-52k), so the saving is close to the
 no-slim Claude Code result without cutting anything from the client.
+
+## Pi, gpt-6-luna (2026-09-27)
+
+`--agent pi` (Pi 0.87.1, provider openai-codex, thinking medium), 1 rep, Arbiter off vs on through
+the Pi extension (hooks only: Pi has no MCP). All 10 held-out tasks run (Pi sessions can continue).
+Same cost index as Codex.
+
+| suite | tasks | success off / on | cost index | input tokens | output tokens | tool calls | Arbiter cheaper |
+|---|---|---|---|---|---|---|---|
+| heldout_v1 | 10 | 10/10 / 10/10 | 149k -> 112k (-25%) | -43% | -24% | 79 -> 36 | 8/10 |
+| largerepo_v1 | 5 | 5/5 / 5/5 | 101k -> 48k (-52%) | -68% | -41% | 50 -> 25 | 5/5 |
+
+No tampering or false "done" claims; no leaks. The large-repo figure includes one expensive
+baseline run (lr_rounding_cent 41.8k); without it the saving is -35%. Losses: stock_cancel_bug +2%,
+token_hashing +8%.
+
+Harness and Arbiter together, on the tasks both ran (cost index, sums):
+
+| | Codex, Arbiter off | Codex, Arbiter on | Pi, Arbiter off | Pi, Arbiter on |
+|---|---|---|---|---|
+| heldout_v1 (9 tasks) | 222k | 193k | 134k | 103k (-54% vs Codex off) |
+| largerepo_v1 (5 tasks) | 113k | 94k | 101k | 48k (-57% vs Codex off) |
+
+Pi's fixed context is small, so exploration is most of a baseline run's cost, and that is what the
+context pack replaces (tool calls halve).
