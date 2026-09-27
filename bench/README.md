@@ -185,3 +185,19 @@ Each run uses:
 - a throwaway git workspace.
 
 Claude's per-project transcript folder for the workspace is copied into the results and then deleted. After each run the harness counts benchmark sessions in your real Arbiter database; the count must not change, and the result is recorded in `run.json` as `real_install_bench_sessions_added`.
+
+## Codex, gpt-6-luna (2026-09-27)
+
+`--agent codex`, default (medium) reasoning, 1 rep, Arbiter off (`baseline`) vs on (`full`, no slim
+mode: Codex has no equivalent). `export_scope_change` skipped (multi-prompt). Cost index = uncached
+input + 0.1 x cached input + 8 x output (OpenAI price ratios; the account is on a ChatGPT plan).
+
+| suite | tasks | success off / on | cost index | input tokens | output tokens | tool calls | Arbiter cheaper |
+|---|---|---|---|---|---|---|---|
+| heldout_v1 | 9 | 9/9 / 9/9 | 222k -> 193k (-13%) | -15% | -13% | 40 -> 31 | 8/9 |
+| largerepo_v1 | 5 | 5/5 / 5/5 | 113k -> 94k (-17%) | -20% | -4% | 23 -> 17 | 5/5 |
+
+No tampering or false "done" claims in either condition; no leaks into the real install. The one
+loss (mailer_kwonly, +44%) re-read the files the pack already held and made three extra edits.
+Codex's fixed context is ~15k tokens (Claude Code: ~39-52k), so the saving is close to the
+no-slim Claude Code result without cutting anything from the client.
