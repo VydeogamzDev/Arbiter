@@ -35,6 +35,7 @@ from arbiter_agent.policy.budgets import Budgets
 from arbiter_agent.policy.circuit_breaker import BreakerBoard
 from arbiter_agent.policy.overload import LoadShedder
 from arbiter_agent.reasoning.loop_detector import LoopDetector
+from arbiter_agent.retrieval.budgets import prompt_budget
 from arbiter_agent.retrieval.miss_detector import MissDetector
 from arbiter_agent.state import contract_compiler, contract_coverage, facts, goal_epochs
 from arbiter_agent.state import intent as intent_log
@@ -117,6 +118,7 @@ class SessionEngine:
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
         self._changed: dict[str, list[str]] = {}    # sid -> code files the session edited (related test runs)
+        self._known: dict[str, set[str]] = {}       # sid -> files (and pack blocks) already in the conversation
         self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
         self._models_file = Path(db).parent / "models.json"   # client -> last model, kept across restarts
         self._last_model: dict[str, str] = _load_models(self._models_file)   # predicts a new session's model
@@ -903,8 +905,7 @@ class SessionEngine:
         cwd = self.session_cwd(sid)
         if not cwd or self.context_provider is None:
             return None
-        budget = min(float(self.config.get("retrieval.auto_context_deadline_ms", 250)) / 1000.0,
-                     max(0.0, deadline.remaining() - 0.1))
+        budget = min(prompt_budget(self.config, sid.split(":", 1)[0]), max(0.0, deadline.remaining() - 0.1))
         if budget <= 0.02:
             return None
         client = sid.split(":", 1)[0]
@@ -912,7 +913,9 @@ class SessionEngine:
         if mode == "off":
             return None
         query = last[-1].text[:2000]
-        qctx = {"query": query, "misses": len(self.misses.recent(sid))}
+        known = sorted(self._known.get(sid, ()))
+        qctx = {"query": query, "misses": len(self.misses.recent(sid)), "skip": known,
+                "context_files": [k for k in known if "#" not in k], "pins_only": bool(known)}
         pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 2500))
         use_pack = self.pack_provider is not None and pack_tokens > 0
         ex = cf.ThreadPoolExecutor(max_workers=1)
@@ -979,6 +982,9 @@ class SessionEngine:
         if not res.get("text"):
             return None
         self.misses.surfaced(sid, list(res.get("picks") or []), query)
+        known = self._known.setdefault(sid, set())
+        for k in res.get("shown_keys") or []:
+            known.update((k, k.split("#", 1)[0]))
         self.stats["auto_context"] = self.stats.get("auto_context", 0) + 1
         self.stats["auto_context_pack_tokens"] = self.stats.get("auto_context_pack_tokens", 0) + int(
             res.get("tokens") or 0)
@@ -1059,6 +1065,7 @@ class SessionEngine:
                      deadline: Deadline) -> dict[str, Any]:
         """PostToolUse: a held-back context pack, and the result of Arbiter's own test run after edits."""
         parts: list[str] = []
+        self._note_known(sid, payload)
         if sid in self._late_packs:
             text = self._take_late_pack(sid)
             if text:
@@ -1071,6 +1078,24 @@ class SessionEngine:
         if tested:
             parts.append(tested)
         return ui_status.hook_context(name, "\n".join(parts)) if parts else {}
+
+    def _note_known(self, sid: str, payload: dict[str, Any]) -> None:
+        """Files the agent read or edited are in its context: a follow-up prompt's pack leaves them out."""
+        tool = str(payload.get("tool_name") or "").lower()
+        if tool not in facts.EDIT_TOOLS and tool not in ("read", "view", "read_file", "open"):
+            return
+        root = self._repo_root(sid, payload)
+        if not root:
+            return
+        known = self._known.setdefault(sid, set())
+        for raw in facts.edit_paths(tool, payload.get("tool_input")):
+            p = Path(raw)
+            try:
+                rel = (p.resolve() if p.is_absolute() else (Path(root) / p).resolve()).relative_to(
+                    Path(root).resolve()).as_posix()
+            except (ValueError, OSError):
+                continue
+            known.add(rel)
 
     def _repo_root(self, sid: str, payload: dict[str, Any] | None = None) -> str | None:
         rc = self._read()

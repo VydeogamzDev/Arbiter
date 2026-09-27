@@ -25,6 +25,8 @@ from typing import Any
 # pack showed in full (all complete), which caused both of its losing held-out tasks (2026-09-27).
 WORDING = ("[Arbiter] Task context, read from disk at this prompt. Files shown in full are complete and current: "
            "edit them directly, and re-read one only after it changes.")
+FOLLOWUP_WORDING = ("[Arbiter] More task context for this prompt: files not yet shown in this conversation, read "
+                    "from disk now (complete and current unless marked).")
 MAP_ALL_MAX = 80          # list every path up to this many files
 MAX_FILE_CHARS = 6000     # one file's share before it's cut
 OUTLINE_LINES = 40        # an outline's share
@@ -68,11 +70,12 @@ def repo_map(files: list[str], picks: list[str]) -> str:
     return f"{len(files)} files; top level: {head}; likely relevant: {', '.join(picks)}"
 
 
-def excerpt(path: str, text: str, query: str, line: int | None = None) -> str | None:
+def excerpt(path: str, text: str, query: str, line: int | None = None, classes: bool = True) -> str | None:
     """For a file over MAX_FILE_CHARS: the definitions the prompt names (and the one holding the
     index's best-matching line) instead of the file's head. Real repos have long modules: sympy's
     iterables.py is ~3,000 lines, and its first 6,000 characters are imports and unrelated
-    functions. None when nothing matches (the caller falls back to the head)."""
+    functions. None when nothing matches (the caller falls back to the head). ``classes=False``
+    (a file the conversation already holds): named methods only, not a named class's whole body."""
     if not path.endswith(".py"):
         return None
     try:
@@ -92,6 +95,8 @@ def excerpt(path: str, text: str, query: str, line: int | None = None) -> str | 
         start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
         end = getattr(n, "end_lineno", n.lineno) or n.lineno
         holds = line is not None and start <= line <= end and not isinstance(n, ast.ClassDef)
+        if isinstance(n, ast.ClassDef) and not classes:
+            continue
         if name in words or holds:
             chosen.append(n)
     # A named class whose methods are chosen too: keep the methods, not the whole class.
@@ -134,14 +139,17 @@ def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],
 
 def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_of: Callable[[str], list[str]],
            files: set[str], limit: int = 8) -> list[str]:
-    """Pins, then the top of the ranking, then what the top picks import, then their tests."""
-    head = list(dict.fromkeys(pins + ranked[:3]))
+    """Pins, then the top of the ranking, then what the top picks import, then their tests. With a
+    pin (a file the prompt names or that defines a named symbol) the ranking adds no guesses:
+    on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task)."""
+    head = list(dict.fromkeys(pins + ([] if pins else ranked[:3])))
     out = list(head)
     for p in head[:3]:
         out += sorted(d for d in deps.get(p, set()) if d in files)
     for p in head[:2]:
         out += tests_of(p)
-    out += ranked[3:5]
+    if not pins:
+        out += ranked[3:5]
     seen: list[str] = []
     for p in out:
         if p in files and p not in seen:
@@ -154,7 +162,8 @@ MAP_WORDING = "[Arbiter] Task context at this prompt (snapshot):"
 
 def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], str | None],
           max_tokens: int, contents: bool = True, test_note: str | None = None,
-          full: set[str] | None = None, query: str = "", hit_lines: dict[str, int] | None = None) -> str | None:
+          full: set[str] | None = None, query: str = "", hit_lines: dict[str, int] | None = None,
+          skip: set[str] | None = None, shown_keys: list[str] | None = None) -> str | None:
     """``contents=False`` gives the map-only pack: the repo map and the ranked likely-relevant files,
     without file contents (models that re-read files before editing gain nothing from contents).
 
@@ -163,7 +172,13 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
     see Arbiter's result (5 redundant runs in 10 held-out tasks).
 
     ``full``: in a large repo (more than MAP_ALL_MAX files) only these picks are shown in full, the
-    others as outlines; ``None`` shows every pick in full."""
+    others as outlines; ``None`` shows every pick in full.
+
+    ``skip``: paths (files the conversation already holds: shown, read or edited) and block keys
+    (excerpts already shown) for a follow-up prompt of the same session.
+    Those are left out, and so are the repo map and test note; with nothing new there's no pack. On
+    sympy, every follow-up prompt re-sent a ~1.7k-token pack of files already in context, which then
+    rode along in every later request (2026-09-27). ``shown_keys`` receives the keys of the blocks shown."""
     if not contents:
         if not picks:
             return None
@@ -173,7 +188,11 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
                 f"Most likely relevant, in order: {', '.join(top)}"]
         return "\n".join(head + ([test_note] if test_note else []))[: max_tokens * 4]
     budget = max_tokens * 4
-    lines = [WORDING, f"Repo files: {repo_map(files, picks)}"] + ([test_note] if test_note else [])
+    skip = skip or set()
+    if skip:
+        lines = [FOLLOWUP_WORDING]
+    else:
+        lines = [WORDING, f"Repo files: {repo_map(files, picks)}"] + ([test_note] if test_note else [])
     used = sum(len(x) + 1 for x in lines)
     shown: list[str] = []
     for p in picks:
@@ -185,23 +204,37 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
             if not body.strip():
                 continue
             block = f"--- {p} (outline: signatures only; read the file for the body) ---\n{body.rstrip()}\n"
-        elif len(text) > MAX_FILE_CHARS and (ex := excerpt(p, text, query, (hit_lines or {}).get(p))):
+        elif len(text) > MAX_FILE_CHARS and (ex := excerpt(p, text, query, (hit_lines or {}).get(p),
+                                                                  classes=p not in (skip or ()))):
+            # An excerpt is judged by its content below: another function of a big file is new.
             n = text.count("\n") + 1
             block = f"--- {p} (excerpt of a {n}-line file: the definitions below are complete) ---\n{ex.rstrip()}\n"
         else:
             body = text if len(text) <= MAX_FILE_CHARS else \
                 text[:MAX_FILE_CHARS] + "\n... (cut; read the file for more)"
             block = f"--- {p} ---\n{body.rstrip()}\n"
+        key = block_key(p, block)
+        if key in skip or (p in skip and "(excerpt of a" not in block):
+            continue                     # already in the conversation (shown, read or edited)
         if used + len(block) > budget:
             if not shown:
                 continue
             break
         lines.append(block)
         shown.append(p)
+        if shown_keys is not None:
+            shown_keys.append(key)
         used += len(block) + 1
     if not shown:
         return None
     return "\n".join(lines)
+
+
+def block_key(path: str, block: str) -> str:
+    """A shown block's identity: the same file shown the same way (a changed excerpt is new)."""
+    import hashlib
+
+    return f"{path}#{hashlib.sha256(block.encode('utf-8', 'replace')).hexdigest()[:12]}"
 
 
 def summary(pack: dict[str, Any]) -> str:

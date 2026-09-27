@@ -18,6 +18,7 @@ from arbiter_agent.retrieval.index import RepoIndex
 from arbiter_agent.state.repo_identity import RepoIdentity, identify
 
 log = logging.getLogger("arbiter.retrieval")
+HUB_IMPORTERS = 25      # a module imported by more files than this is a hub, not task context
 
 
 class RetrievalService:
@@ -142,15 +143,24 @@ class RetrievalService:
         qc = candidates.QueryContext.from_dict(ctx)
         ranking = reranker.rerank(candidates.gather(idx, ident.root, qc, policy=policy), qc).to_dict()
         files = [f for f in idx.files(ident.root) if policy.allowed(f)]
-        deps, _ = idx.graph(ident.root)
+        deps, rev = idx.graph(ident.root)
+        # Hub modules (imported by many files, like sympy/core/numbers.py) say nothing about a task.
+        hubs = {f for f, importers in (rev or {}).items() if len(importers) > HUB_IMPORTERS}
+        deps = {f: {d for d in ds if d not in hubs} for f, ds in deps.items()}
         pins = [p["path"] for p in ranking.get("pins", [])]
         ranked = [r["path"] for r in ranking.get("ranked", [])]
 
         def tests_of(p: str) -> list[str]:
             return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
 
-        picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
-        full = context_pack.core(ranked, pins, deps, tests_of, set(files))
+        if ctx.get("pins_only"):
+            # A follow-up prompt of the same conversation: only files the prompt names outright. The
+            # ranking's guesses for a short follow-up ("do the same for `runs`") were mostly noise.
+            picks = pins[:4]
+            full = set(picks)
+        else:
+            picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
+            full = context_pack.core(ranked, pins, deps, tests_of, set(files))
         root = Path(ident.root)
 
         def read(rel: str) -> str | None:
@@ -176,13 +186,18 @@ class RetrievalService:
             elif cmd:
                 note = (f"Tests: Arbiter runs `{cmd}` after each code edit and adds the result to that edit's "
                         "tool output.")
+        skip = {str(s).replace("\\", "/") for s in ctx.get("skip") or []}
+        shown_keys: list[str] = []
+        hit_lines = {**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
+                     **{q["path"]: int(q.get("line") or 1) for q in ranking.get("pins", [])}}
         text = context_pack.build(root, files, picks, read, max_tokens,
                                   contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)),
-                                  test_note=note, full=full, query=str(ctx.get("query") or ""),
-                                  hit_lines={**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
-                                         **{q["path"]: int(q.get("line") or 1) for q in ranking.get("pins", [])}})
-        map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False, test_note=note)
+                                  test_note=note, full=full, query=str(ctx.get("query") or ""), hit_lines=hit_lines,
+                                  skip=skip, shown_keys=shown_keys)
+        map_text = None if skip else context_pack.build(root, files, picks, read, max_tokens, contents=False,
+                                                        test_note=note)
         return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
+                                                "shown_keys": shown_keys,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})
 
     def status(self, cwd: str) -> dict[str, Any]:

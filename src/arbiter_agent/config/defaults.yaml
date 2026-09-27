@@ -149,6 +149,8 @@ retrieval:
                                          # later sessions reuse the last model seen): map now, file contents
                                          # at the first tool hook if the model is full-mode | defer | full | map | off
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
+  auto_context_client_deadline_ms: # per client, where the host allows a longer hook (Pi has no hook timeout)
+    pi: 6000
 
 review:
   security_floor: high

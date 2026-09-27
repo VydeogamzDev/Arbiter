@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from arbiter_agent.state.repo_identity import RepoIdentity
-from arbiter_agent.telemetry.baseline import Baseline, FileMetrics, scan
+from arbiter_agent.telemetry.baseline import Baseline, FileMetrics, scan, scan_changed
 
 HIGH, MEDIUM, LOW = "high", "medium", "low"
 
@@ -115,7 +115,11 @@ def check(baseline: Baseline | None, ident: RepoIdentity | None, runs: list[dict
           acknowledged: set[str] | None = None, max_s: float | None = None) -> IntegrityReport:
     if baseline is None or ident is None:
         return IntegrityReport("unknown", reason="no session baseline")
-    cur, truncated = scan(ident, max_s)
+    changed = None if baseline.truncated else scan_changed(ident, baseline.files)
+    if changed is not None:               # git knows what changed: exact, and fast on a large repo
+        cur, truncated = changed, False
+    else:
+        cur, truncated = scan(ident, max_s)
     if truncated and len(cur) < 5000:
         return IntegrityReport("unknown", reason="integrity scan ran out of time", files_checked=len(cur))
     findings = compare(baseline.files, cur, base_truncated=baseline.truncated, cur_truncated=truncated)

@@ -171,6 +171,7 @@ class Daemon:
             self.retrieval = RetrievalService(self.paths.data, self.key, self.config,
                                               redaction_enabled=self.flags.enabled("redaction"))
             self.engine.cwd_listeners.append(lambda sid, cwd: self.retrieval.warm(cwd) if self.retrieval else None)
+            self.engine.cwd_listeners.append(lambda sid, cwd: self._warm_tests(cwd))
             self.engine.graph_provider = self._graph_for
             retrieval = self.retrieval
             self.engine.context_provider = lambda cwd, ctx, budget: retrieval.context(cwd, ctx, budget)
@@ -433,6 +434,14 @@ class Daemon:
                                 unavailable="repository index unavailable (circuit breaker or control); "
                                             "use your own search tools")
 
+    def _warm_tests(self, cwd: str) -> None:
+        try:
+            from arbiter_agent.state.repo_identity import identify
+
+            self.engine.auto_tester.warm(identify(cwd).root)
+        except Exception:
+            pass
+
     def _retrieve(self, params: dict[str, Any]) -> Any:
         assert self.retrieval is not None
         sid = self.engine.resolve_session(params)
@@ -448,6 +457,10 @@ class Daemon:
                 self.engine.misses.surfaced(sid, [h["path"] for h in out.get("hits", [])], str(params.get("query")))
         elif op == "index":             # build/refresh the whole index now (setup, benchmarks)
             ident, idx, _, res = r.prepare(cwd, budget_s=None)
+            self.engine.auto_tester.warm(ident.root, wait=True)     # and the test runner's bytecode cache
+            from arbiter_agent.telemetry.baseline import scan
+
+            scan(ident)        # and the test-file measurements a session's integrity baseline reuses
             out = {"index": idx.stamp(ident.root).to_dict(), "changed": res.changed, "seconds": res.seconds}
             n = 0
         elif op == "symbol":
@@ -543,7 +556,9 @@ class Daemon:
         if native_event in ("UserPromptSubmit", "userPromptSubmit") and self.config.get("retrieval.auto_context"):
             # The first prompt of a task may carry the context pack; it saves whole agent turns, so it
             # gets its own (still bounded) deadline instead of the gating one.
-            wait_s = max(wait_s, float(self.config.get("retrieval.auto_context_deadline_ms", 2500)) / 1000.0 + 0.3)
+            from arbiter_agent.retrieval.budgets import prompt_budget
+
+            wait_s = max(wait_s, prompt_budget(self.config, client) + 0.3)
         auto_test = str(self.config.get("completion.auto_test", "off"))
         if native_event in ("PostToolUse", "postToolUse") and auto_test == "after_edit":
             # Arbiter's own test run after an edit replaces an agent call; it gets its own bounded wait.

@@ -61,6 +61,19 @@ def project_python(root: Path) -> str:
     return "python"
 
 
+def _pytest_configured(root: Path, names: set[str]) -> bool:
+    if names & {"pytest.ini", "conftest.py"}:
+        return True
+    for name, marker in (("pyproject.toml", "[tool.pytest"), ("setup.cfg", "[tool:pytest]"), ("tox.ini", "[pytest]")):
+        if name in names:
+            try:
+                if marker in (root / name).read_text("utf-8", errors="replace"):
+                    return True
+            except OSError:
+                pass
+    return False
+
+
 def detect_command(root: Path) -> str | None:
     """The repo's plain test command, if it has an obvious one."""
     try:
@@ -69,6 +82,10 @@ def detect_command(root: Path) -> str | None:
         return None
     has_py_tests = (root / "tests").is_dir() or (root / "test").is_dir() or any(
         n.startswith("test_") and n.endswith(".py") for n in names)
+    if not has_py_tests and _pytest_configured(root, names):
+        # Tests inside the package (sympy/*/tests/test_*.py): nothing at the top level says so, and
+        # auto-test was silently off on sympy (2026-09-27).
+        has_py_tests = count_test_files(root, stop_at=1) > 0
     if has_py_tests and (names & {"pytest.ini", "conftest.py", "pyproject.toml", "setup.cfg", "tox.ini"}
                          or any(n.endswith(".py") for n in names) or (root / "tests").is_dir()):
         return f"{project_python(root)} -m pytest -q"
@@ -208,6 +225,7 @@ class AutoTester:
         self._slow: set[str] = set()         # "root|command" keys: a related run is judged on its own
         self._timed_out: set[str] = set()
         self._scope: dict[str, str] = {}
+        self._warmed: set[str] = set()
         self.stats = {"runs": 0, "reused": 0, "slow_roots": 0}
 
     def mode(self) -> str:
@@ -239,16 +257,81 @@ class AutoTester:
             return None                    # nothing known to cover the change: don't guess at the whole suite
         return base + " " + " ".join(f'"{t}"' if " " in t else t for t in tests)
 
-    def _run(self, root: Path, command: str, state: str) -> Outcome:
+    def warm(self, root: str | Path, *, wait: bool = False) -> None:
+        """Compile a large repo's bytecode into Arbiter's cache once, in the background, so its first
+        post-edit test run isn't a cold start: sympy's first related run took 5-9 s cold against
+        ~2.5 s warm, past Pi's 8 s window under load (2026-09-27). Only for related-scope (large)
+        Python repos; a no-op after the first time for a root."""
+        root = Path(root)
+        key = str(root)
+        with self._lock:
+            if key in self._warmed:
+                return
+            self._warmed.add(key)
+        base = self.base_command(root) or ""
+        if self.mode() == "off" or "pytest" not in base or self.scope(root) != "related":
+            return
+        python = base.split(" -m ", 1)[0].strip().strip('"')
+
+        def job() -> None:
+            import subprocess
+
+            env = {**os.environ, "PYTHONPYCACHEPREFIX": str(self._pycache(root))}
+            try:
+                subprocess.run([python, "-m", "compileall", "-q", "-j", "0", str(root)], cwd=root, env=env,
+                               capture_output=True, timeout=300,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            except (OSError, subprocess.SubprocessError):
+                pass
+
+        fut = self._pool.submit(job)
+        if wait:
+            try:
+                fut.result(timeout=300)
+            except Exception:
+                pass
+
+    def _pycache(self, root: Path, recent_s: float = 120.0) -> Path:
+        """Arbiter's own bytecode cache for this repo, minus the entries of recently changed files.
+
+        Python validates a .pyc by its source's size and whole-second mtime, so a same-size edit within
+        a second of the last run (a one-character fix) would run stale bytecode and report the old
+        result (found by this module's own test). A fresh cache per run avoided that but recompiled
+        everything each time: sympy's test runs took 5.3 s instead of 2.5 s and missed Pi's post-edit
+        window (2026-09-27). So the cache persists, and bytecode of any file changed in the last
+        ``recent_s`` seconds is dropped before each run."""
         import tempfile
 
+        # One cache for everything: the prefix redirects the standard library's and installed packages'
+        # bytecode too (pytest, hypothesis), and a per-repo cache recompiled those for every new repo
+        # (a first run 7.2 s, the next 2.2 s). Sources map to distinct paths inside it anyway.
+        base = Path(tempfile.gettempdir()) / "arbiter-pyc"
+        now = time.time()
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            for f in filenames:
+                if not f.endswith(".py"):
+                    continue
+                p = os.path.join(dirpath, f)
+                try:
+                    if now - os.stat(p).st_mtime > recent_s:
+                        continue
+                except OSError:
+                    continue
+                # PYTHONPYCACHEPREFIX mirrors the source directory (drive letter dropped on Windows).
+                mirror = base / Path(os.path.splitdrive(dirpath)[1].lstrip("\\/"))
+                for stale in mirror.glob(f[:-3] + ".*.pyc"):
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
+        return base
+
+    def _run(self, root: Path, command: str, state: str) -> Outcome:
         timeout = int(self.config.get("completion.auto_test_timeout_s", 120))
-        # A private bytecode cache per run: Python validates .pyc files by source size and whole-second
-        # mtime, so a same-size edit within a second of the last run (a one-character fix) would run
-        # stale bytecode and report the old result. Found by this module's own test.
-        with tempfile.TemporaryDirectory(prefix="arbiter-pyc-") as pyc:
-            res = vr.run_one(vr.VerifyCommand(name="auto_test", run=command, kind="test", timeout_s=timeout), root,
-                             extra_env={"PYTHONPYCACHEPREFIX": pyc, "PYTHONDONTWRITEBYTECODE": ""})
+        pyc = self._pycache(root)
+        res = vr.run_one(vr.VerifyCommand(name="auto_test", run=command, kind="test", timeout_s=timeout), root,
+                         extra_env={"PYTHONPYCACHEPREFIX": str(pyc), "PYTHONDONTWRITEBYTECODE": ""})
         out = Outcome(command, res, state, time.time())
         with self._lock:
             self._last[str(root)] = out

@@ -112,8 +112,33 @@ def measure(path: Path, role: str) -> FileMetrics | None:
     return m
 
 
+# path -> (size, mtime_ns, metrics). A scan re-reads only files whose stat changed: sympy's 622 test
+# files took longer than the claim-time budget to re-read, so every completion claim came back
+# "integrity UNKNOWN" and was blocked (2026-09-27).
+_MEASURED: dict[str, tuple[int, int, FileMetrics | None]] = {}
+_MEASURED_MAX = 50000
+
+
+def _measure_cached(p: Path, role: str) -> FileMetrics | None:
+    try:
+        st = p.stat()
+    except OSError:
+        return None
+    key = str(p)
+    hit = _MEASURED.get(key)
+    if hit is not None and hit[0] == st.st_size and hit[1] == st.st_mtime_ns \
+            and (hit[2] is None or hit[2].role == role):
+        return hit[2]
+    m = measure(p, role)
+    if len(_MEASURED) >= _MEASURED_MAX:
+        _MEASURED.clear()
+    _MEASURED[key] = (st.st_size, st.st_mtime_ns, m)
+    return m
+
+
 def scan(ident: RepoIdentity, max_s: float | None = None) -> tuple[dict[str, FileMetrics], bool]:
-    """Walk the repo for test/fixture/harness files. Bounded by file count and time."""
+    """Walk the repo for test/fixture/harness files. Bounded by file count and time; unchanged files
+    reuse their last measurement."""
     limit = MAX_WALK_S if max_s is None else max(0.05, max_s)
     root = Path(ident.root)
     out: dict[str, FileMetrics] = {}
@@ -127,7 +152,7 @@ def scan(ident: RepoIdentity, max_s: float | None = None) -> tuple[dict[str, Fil
             role = role_of(key)
             if role is None:
                 continue
-            m = measure(p, role)
+            m = _measure_cached(p, role)
             if m is not None:
                 out[key] = m
             if len(out) >= MAX_FILES:
@@ -136,6 +161,43 @@ def scan(ident: RepoIdentity, max_s: float | None = None) -> tuple[dict[str, Fil
             truncated = True
             break
     return out, truncated
+
+
+def scan_changed(ident: RepoIdentity, base: dict[str, FileMetrics]) -> dict[str, FileMetrics] | None:
+    """The baseline's file set brought up to date from ``git status``: only the files git reports
+    as changed, added or deleted are measured again. None outside a git repo or if git fails."""
+    if not ident.in_repo:
+        return None
+    out = git(ident.root, "status", "--porcelain", "-z", "--untracked-files=all")
+    if out is None:
+        return None
+    cur = dict(base)
+    root = Path(ident.root)
+    entries = out.split("\0")
+    i = 0
+    while i < len(entries):
+        e = entries[i]
+        i += 1
+        if len(e) < 4:
+            continue
+        code, rel = e[:2], e[3:]
+        paths = [rel]
+        if "R" in code or "C" in code:          # rename/copy: the next entry is the source path
+            if i < len(entries) and entries[i]:
+                paths.append(entries[i])
+            i += 1
+        for r in paths:
+            p = root / r
+            key = path_key(p, ident)
+            role = role_of(key)
+            if role is None:
+                continue
+            m = _measure_cached(p, role) if p.is_file() else None
+            if m is None:
+                cur.pop(key, None)
+            else:
+                cur[key] = m
+    return cur
 
 
 def capture(session_id: str, cwd: str) -> Baseline:

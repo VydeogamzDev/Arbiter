@@ -27,6 +27,22 @@ STOP = {"the", "a", "an", "is", "are", "to", "of", "in", "on", "for", "and", "or
         "at", "by", "from", "as", "can", "all", "every", "our", "my", "look", "change", "instead", "wrong", "real",
         "write", "one", "tests", "test", "exist", "values", "support", "need", "needs"}
 _IDENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:_[A-Za-z0-9_]+|[a-z][A-Z][A-Za-z0-9]*))\b")
+MAX_DEFINERS = 3          # a named symbol defined in more files than this pins none of them
+# `name` or `Class.method` in backticks: a code name even when it's a plain word (`ordinal`, `runs`).
+_TICKED = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^`]*\))?`")
+
+
+def named_symbols(query: str, project_names: set[str]) -> list[str]:
+    """Code names a prompt mentions: backticked names first, then snake_case/camelCase words. The
+    project's own name in prose isn't one: "SymPy's `ordinal`" pinned the file defining a class
+    called SymPy (sympy/utilities/lambdify.py) above sympy/utilities/misc.py (2026-09-27)."""
+    out: list[str] = []
+    for m in _TICKED.findall(query):
+        out += m.split(".")
+    out += _IDENT.findall(query)
+    return [n for n in dict.fromkeys(out) if n.lower() not in project_names and len(n) > 2]
+
+
 _TRACE = [
     re.compile(r"File \"([^\"]+)\", line (\d+)"),                     # Python
     re.compile(r"\(([^()\s]+\.[A-Za-z]{1,5}):(\d+)(?::\d+)?\)"),       # JS/Java-style "(path:line)"
@@ -44,12 +60,14 @@ class QueryContext:
     phase: str = ""                       # debug | implement | review | ...
     budget_tokens: int = 8000
     misses: int = 0                       # recent retrieval misses in this session
+    context_files: list[str] = field(default_factory=list)   # files the conversation already holds
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> QueryContext:
         return cls(str(d.get("query") or ""), str(d.get("errors") or ""), list(d.get("paths") or []),
                    list(d.get("symbols") or []), list(d.get("changed") or []), str(d.get("phase") or ""),
-                   int(d.get("budget_tokens") or 8000), int(d.get("misses") or 0))
+                   int(d.get("budget_tokens") or 8000), int(d.get("misses") or 0),
+                   list(d.get("context_files") or []))
 
 
 @dataclass
@@ -138,13 +156,21 @@ def gather(idx: Any, root: str, ctx: QueryContext, *, deps: dict[str, set[str]] 
         hit = _match_file(p, files)
         if hit:
             c.pins.setdefault(hit, "changed in this task")
-    named = list(dict.fromkeys(ctx.symbols + _IDENT.findall(ctx.query)))
+    project = {PurePosixPath(root.replace("\\", "/")).name.lower()} | {f.split("/", 1)[0].lower() for f in files
+                                                                     if "/" in f}
+    named = list(dict.fromkeys(ctx.symbols + named_symbols(ctx.query, project)))
+    held = set(ctx.context_files)
     for name in named[:6]:
         found = idx.symbol(root, name, limit=10)
-        for d in found["definitions"]:
-            if d["path"] in fileset:
-                c.pins.setdefault(d["path"], f"defines {name}")
-                c.lines.setdefault(d["path"], int(d["line"]))
+        defs = [d for d in found["definitions"] if d["path"] in fileset]
+        # A follow-up that says "`runs` in that module": prefer the definition the conversation holds.
+        if held and any(d["path"] in held for d in defs):
+            defs = [d for d in defs if d["path"] in held]
+        elif len({d["path"] for d in defs}) > MAX_DEFINERS:
+            defs = []            # a generic name (`key`, `sep`): defined all over, it points nowhere
+        for d in defs:
+            c.pins.setdefault(d["path"], f"defines {name}")
+            c.lines.setdefault(d["path"], int(d["line"]))
         c.channels.setdefault("symbol", [])
         for p in found.get("importers", []) + [r["path"] for r in found.get("references", [])]:
             if p in fileset and p not in c.channels["symbol"]:

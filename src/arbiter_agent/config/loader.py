@@ -44,7 +44,8 @@ POSITIVE: set[str] = {
     "semif.queue_capacity", "hosts.default_deadline_ms",
 }
 # Keys that exist but may hold either a scalar or a structured value.
-FREE_FORM: set[str] = {"features", "retrieval.auto_context_pack_models", "completion.auto_test_client_budget_s"}
+FREE_FORM: set[str] = {"features", "retrieval.auto_context_pack_models", "completion.auto_test_client_budget_s",
+                        "retrieval.auto_context_client_deadline_ms"}
 
 
 def load_defaults() -> dict[str, Any]:
