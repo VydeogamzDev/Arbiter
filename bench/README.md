@@ -247,3 +247,31 @@ tests_gate_only 0; Arbiter results delivered: full 20, tests_gate_only 26). Re-r
 pack showed in full: pack_only 18, full 13 in 15 runs (1-rep run before the fix: 7 in 5).
 lr_rounding_cent's expensive baseline is consistent (34-48k over 3 reps), not an outlier: its
 first search returns ~46k characters. Wall time: full -3%, tests_gate_only +12%.
+
+## Real repo: sympy 1.14.0, 3-prompt sessions, Pi gpt-6-luna (2026-09-27)
+
+`--agent pi --suite realrepo_v1 --reps 3` (make_realrepo_v1.py): five sessions of three follow-up
+prompts each on sympy (2,033 files, 622 test files), hidden tests on the final state, index and
+bytecode cache built before the agent starts (an installed daemon keeps both). 30 runs, 90 prompts.
+
+The first attempt (before 8ab11af) cost more with Arbiter than without, and was stopped: the gate
+blocked every claim (integrity scan timed out on 622 test files), Arbiter's test detection missed
+sympy's nested tests, the pack pinned the wrong file ("SymPy's" matched a class named SymPy) and was
+re-sent at every follow-up prompt, and cold test runs missed Pi's post-edit window.
+
+| | baseline | full | change |
+|---|---|---|---|
+| cost index (sum) | 850k | 590k | **-31%** (95% CI over tasks -42% to -15%) |
+| input tokens | 2.02M | 1.32M | -35% |
+| output tokens | 40k | 28k | -29% |
+| tool calls | 312 | 155 | -50% |
+| agent wall time | 1,781 s | 1,528 s | -14% |
+| sessions passing all hidden tests | 14/15 | 13/15 | |
+| agent's own pytest runs | 53 | 0 | Arbiter delivered 86 results |
+| stop blocks / tampering | 0 / 0 | 0 / 0 | |
+
+By prompt position: first prompt -25%, second -32%, third -35%. Every task was cheaper at the median
+(iter_keyfunc 98k -> 42k; ordinal_words 41k -> 40k). Failures: baseline missed an export
+(digital_root not in sympy.ntheory.__all__); both full failures are the same ambiguous requirement
+(ordinal(-25, words=True): the prompt says negatives get "minus ", the hidden test expects the
+numeric fallback "-25th" beyond the word table), which all three baseline runs read the other way.
