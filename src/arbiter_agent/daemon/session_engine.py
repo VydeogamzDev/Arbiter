@@ -116,6 +116,7 @@ class SessionEngine:
         self.auto_tester = AutoTester(config)   # completion.auto_test: Arbiter runs the tests itself
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
+        self._changed: dict[str, list[str]] = {}    # sid -> code files the session edited (related test runs)
         self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
         self._models_file = Path(db).parent / "models.json"   # client -> last model, kept across restarts
         self._last_model: dict[str, str] = _load_models(self._models_file)   # predicts a new session's model
@@ -1092,8 +1093,14 @@ class SessionEngine:
             return None
         if tool in facts.EDIT_TOOLS:
             paths = facts.edit_paths(tool, tin)
-            if not any(auto_test.is_code_path(x) and _inside(x, root) for x in paths):
+            code = [x for x in paths if auto_test.is_code_path(x) and _inside(x, root)]
+            if not code:
                 return None
+            seen = self._changed.setdefault(sid, [])
+            for x in code:
+                if x in seen:
+                    seen.remove(x)
+                seen.append(x)
             self._test_pending[sid] = root
             time.sleep(float(self.config.get("completion.auto_test_settle_s", 0.2)))   # let parallel edits land
         elif tool in facts.SHELL_TOOLS and _runs_tests(facts._shell_command(tin)):
@@ -1102,7 +1109,7 @@ class SessionEngine:
         if sid not in self._test_pending:
             return None
         budget = min(auto_test.edit_budget(self.config, sid.split(":", 1)[0]), deadline.remaining() - 0.2)
-        out = self.auto_tester.run(root, max(0.0, budget))
+        out = self.auto_tester.run(root, max(0.0, budget), changed=self._changed.get(sid))
         if out is None or self.auto_tester.ready(root) is not out:
             return None                                # still running, or the files moved on: later hook
         self._test_pending.pop(sid, None)
@@ -1129,7 +1136,7 @@ class SessionEngine:
         if not root:
             return False
         budget = min(float(self.config.get("completion.auto_test_stop_budget_s", 4.0)), deadline.remaining() - 0.3)
-        out = self.auto_tester.run(root, max(0.0, budget), at_stop=True)
+        out = self.auto_tester.run(root, max(0.0, budget), at_stop=True, changed=self._changed.get(sid))
         if out is None or self.auto_tester.ready(root) is not out:
             return False
         self._record_auto_test(sid, out)

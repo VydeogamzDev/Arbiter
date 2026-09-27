@@ -11,7 +11,9 @@ Guardrails:
 - a suite slower than ``completion.auto_test_max_s`` is remembered as slow and not auto-run again
   after edits (it still runs, once, at a completion claim if nothing else verified the change);
 - runs are bounded by ``completion.auto_test_timeout_s`` and never block a hook past its budget: a
-  run that isn't done in time is delivered with a later hook instead.
+  run that isn't done in time is delivered with a later hook instead;
+- in a repo with many test files (``completion.auto_test_scope: auto``) only the tests of the files
+  the session changed run: a full sympy run takes many minutes, one test file 2.5 s (2026-09-27).
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from arbiter_agent.completion import verify_runner as vr
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache", ".mypy_cache", ".ruff_cache",
              "dist", "build", "target", ".tox", ".idea", ".vscode", ".arbiter"}
 MAX_FINGERPRINT_FILES = 5000
+MAX_RELATED = 6           # test files in one related run
 CODE_SUFFIXES = {".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".rb",
                  ".cs", ".c", ".cc", ".cpp", ".h", ".hpp", ".swift", ".php", ".scala", ".toml", ".cfg", ".ini",
                  ".json", ".yaml", ".yml"}
@@ -81,6 +84,60 @@ def detect_command(root: Path) -> str | None:
     if "go.mod" in names:
         return "go test ./..."
     return None
+
+
+def is_test_file(name: str) -> bool:
+    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+
+
+def count_test_files(root: Path, stop_at: int = 1000) -> int:
+    n = 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        n += sum(1 for f in filenames if is_test_file(f))
+        if n >= stop_at:
+            break
+    return n
+
+
+def related_tests(root: Path, changed: list[str]) -> list[str]:
+    """Test files for the changed files, by the usual layouts: a changed test file itself, else
+    ``test_<module>.py`` in a ``tests``/``test`` dir beside the module or in any parent up to the
+    root (``pkg/sub/mod.py`` -> ``pkg/sub/tests/test_mod.py``, ``tests/test_mod.py``). Most recent
+    change first; repo-relative, forward slashes."""
+    out: list[str] = []
+    rroot = root.resolve()
+    for raw in reversed(changed):
+        try:
+            p = Path(raw) if Path(raw).is_absolute() else rroot / raw
+            rel = p.resolve().relative_to(rroot)
+        except (ValueError, OSError):
+            continue
+        if rel.suffix != ".py":
+            continue
+        found: list[Path] = []
+        if is_test_file(rel.name):
+            found.append(rel)
+        else:
+            stem = rel.parent.name if rel.name == "__init__.py" else rel.stem
+            names = (f"test_{stem}.py", f"{stem}_test.py")
+            d = rel.parent
+            while True:
+                for sub in ("tests", "test", ""):
+                    for n in names:
+                        cand = d / sub / n if sub else d / n
+                        if (rroot / cand).is_file():
+                            found.append(cand)
+                if not d.parts:
+                    break
+                d = d.parent
+        for f in found:
+            t = f.as_posix()
+            if t not in out:
+                out.append(t)
+        if len(out) >= MAX_RELATED:
+            break
+    return out[:MAX_RELATED]
 
 
 def is_code_path(path: str) -> bool:
@@ -148,16 +205,39 @@ class AutoTester:
         self._pool = cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="auto-test")
         self._inflight: dict[str, tuple[str, cf.Future[Outcome]]] = {}   # root -> (state, future)
         self._last: dict[str, Outcome] = {}
-        self._slow: set[str] = set()
+        self._slow: set[str] = set()         # "root|command" keys: a related run is judged on its own
         self._timed_out: set[str] = set()
+        self._scope: dict[str, str] = {}
         self.stats = {"runs": 0, "reused": 0, "slow_roots": 0}
 
     def mode(self) -> str:
         return str(self.config.get("completion.auto_test", "off"))
 
-    def command(self, root: Path) -> str | None:
+    def scope(self, root: Path) -> str:
+        """full | related. ``auto`` picks related for repos with more than
+        ``auto_test_related_min_test_files`` test files, when the command is pytest."""
+        want = str(self.config.get("completion.auto_test_scope", "auto"))
+        if want in ("full", "related"):
+            return want
+        key = str(root)
+        if key not in self._scope:
+            base = self.base_command(root) or ""
+            many = count_test_files(root) > int(self.config.get("completion.auto_test_related_min_test_files", 40))
+            self._scope[key] = "related" if many and "pytest" in base else "full"
+        return self._scope[key]
+
+    def base_command(self, root: Path) -> str | None:
         forced = self.config.get("completion.auto_test_command")
         return str(forced) if forced else detect_command(root)
+
+    def command(self, root: Path, changed: list[str] | None = None) -> str | None:
+        base = self.base_command(root)
+        if not base or self.scope(root) != "related":
+            return base
+        tests = related_tests(root, changed or [])
+        if not tests:
+            return None                    # nothing known to cover the change: don't guess at the whole suite
+        return base + " " + " ".join(f'"{t}"' if " " in t else t for t in tests)
 
     def _run(self, root: Path, command: str, state: str) -> Outcome:
         import tempfile
@@ -173,22 +253,26 @@ class AutoTester:
         with self._lock:
             self._last[str(root)] = out
             self.stats["runs"] += 1
+            key = f"{root}|{command}"
             if res.duration_s > float(self.config.get("completion.auto_test_max_s", 60)) or res.timed_out:
-                self._slow.add(str(root))
+                self._slow.add(key)
                 self.stats["slow_roots"] = len(self._slow)
             if res.timed_out:
-                self._timed_out.add(str(root))     # never auto-run a suite that can't finish in time
+                self._timed_out.add(key)           # never auto-run a suite that can't finish in time
         return out
 
-    def run(self, root: str | Path, budget_s: float, *, at_stop: bool = False) -> Outcome | None:
+    def run(self, root: str | Path, budget_s: float, *, at_stop: bool = False,
+            changed: list[str] | None = None) -> Outcome | None:
         """The outcome for the repo's current files: reused if unchanged, else run (waiting up to
-        ``budget_s``). None if there's no test command, the suite is slow, or it isn't done in time."""
+        ``budget_s``). None if there's no test command, the suite is slow, or it isn't done in time.
+        ``changed``: the files the session changed (related scope runs their tests)."""
         root = Path(root)
         key = str(root)
-        if key in self._timed_out or (key in self._slow and not at_stop):
-            return None
-        command = self.command(root)
+        command = self.command(root, changed)
         if not command:
+            return None
+        ck = f"{key}|{command}"
+        if ck in self._timed_out or (ck in self._slow and not at_stop):
             return None
         state = fingerprint(root)
         with self._lock:

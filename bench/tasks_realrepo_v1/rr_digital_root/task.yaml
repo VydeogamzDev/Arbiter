@@ -1,0 +1,23 @@
+id: rr_digital_root
+category: multi_turn
+prompts:
+- 'Add a `digital_root(n, b=10)` function to sympy''s number theory package: repeatedly sum the base-b digits of
+  n until a single digit is left (digital_root(0) == 0). It should be importable with `from sympy.ntheory import
+  digital_root`.'
+- digital_root should keep the sign of n (digital_root(-38) == -2), and reject bases below 2 with the same ValueError
+  that `digits` raises.
+- 'Also add `multiplicative_digital_root(n, b=10)` beside it: repeatedly multiply the base-b digits until one digit
+  is left, keeping the sign the same way, and export it the same way.'
+requirements:
+  dr_basic: test_dr_basic
+  dr_base: test_dr_base
+  dr_negative: test_dr_negative
+  dr_bad_base: test_dr_bad_base
+  mdr: test_mdr
+  mdr_base: test_mdr_base
+  exports: test_exports
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: sympy 1.14.0 (2,033 files); hidden tests check the state after all prompts

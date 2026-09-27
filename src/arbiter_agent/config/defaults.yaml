@@ -174,6 +174,8 @@ completion:
   auto_test_timeout_s: 120       # kill a run after this
   auto_test_max_s: 60.0          # a suite slower than this is not auto-run after edits again
   auto_test_settle_s: 0.2        # pause after an edit so parallel edits land before the run
+  auto_test_scope: auto          # full | related (tests of the changed files) | auto: related above N test files
+  auto_test_related_min_test_files: 40
   evidence_mode: observed        # observed: with no contracts, a passing test run after the last code change
                                 # (and no weakened tests) verifies; contracts: always require contracts
   require_verbatim_quote_provenance: true

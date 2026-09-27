@@ -68,6 +68,56 @@ def repo_map(files: list[str], picks: list[str]) -> str:
     return f"{len(files)} files; top level: {head}; likely relevant: {', '.join(picks)}"
 
 
+def excerpt(path: str, text: str, query: str, line: int | None = None) -> str | None:
+    """For a file over MAX_FILE_CHARS: the definitions the prompt names (and the one holding the
+    index's best-matching line) instead of the file's head. Real repos have long modules: sympy's
+    iterables.py is ~3,000 lines, and its first 6,000 characters are imports and unrelated
+    functions. None when nothing matches (the caller falls back to the head)."""
+    if not path.endswith(".py"):
+        return None
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", query))
+    defs: list[ast.AST] = []
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defs.append(n)
+            if isinstance(n, ast.ClassDef):
+                defs += [m for m in n.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    chosen: list[ast.AST] = []
+    for n in defs:
+        name = getattr(n, "name", "")
+        start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
+        end = getattr(n, "end_lineno", n.lineno) or n.lineno
+        holds = line is not None and start <= line <= end and not isinstance(n, ast.ClassDef)
+        if name in words or holds:
+            chosen.append(n)
+    # A named class whose methods are chosen too: keep the methods, not the whole class.
+    spans: list[tuple[int, int, str]] = []
+    for n in chosen:
+        start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
+        end = getattr(n, "end_lineno", n.lineno) or n.lineno
+        if isinstance(n, ast.ClassDef) and any(start <= m.lineno <= end for m in chosen if m is not n):
+            end = start          # just the class line
+        spans.append((start, end, getattr(n, "name", "")))
+    if not spans:
+        return None
+    lines = text.splitlines()
+    out: list[str] = []
+    used = 0
+    for start, end, _name in sorted(set(spans)):
+        seg = "\n".join(lines[start - 1:end])
+        if used + len(seg) > MAX_FILE_CHARS:
+            if not out:
+                out.append(seg[:MAX_FILE_CHARS] + "\n... (cut)")
+            break
+        out.append(f"# lines {start}-{end}\n{seg}")
+        used += len(seg)
+    return "\n\n".join(out)
+
+
 def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],
          tests_of: Callable[[str], list[str]], files: set[str]) -> set[str]:
     """The picks a large repo's pack shows in full: pins, the top two, what those import, their
@@ -104,7 +154,7 @@ MAP_WORDING = "[Arbiter] Task context at this prompt (snapshot):"
 
 def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], str | None],
           max_tokens: int, contents: bool = True, test_note: str | None = None,
-          full: set[str] | None = None) -> str | None:
+          full: set[str] | None = None, query: str = "", hit_lines: dict[str, int] | None = None) -> str | None:
     """``contents=False`` gives the map-only pack: the repo map and the ranked likely-relevant files,
     without file contents (models that re-read files before editing gain nothing from contents).
 
@@ -135,6 +185,9 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
             if not body.strip():
                 continue
             block = f"--- {p} (outline: signatures only; read the file for the body) ---\n{body.rstrip()}\n"
+        elif len(text) > MAX_FILE_CHARS and (ex := excerpt(p, text, query, (hit_lines or {}).get(p))):
+            n = text.count("\n") + 1
+            block = f"--- {p} (excerpt of a {n}-line file: the definitions below are complete) ---\n{ex.rstrip()}\n"
         else:
             body = text if len(text) <= MAX_FILE_CHARS else \
                 text[:MAX_FILE_CHARS] + "\n... (cut; read the file for more)"

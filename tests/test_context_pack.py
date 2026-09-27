@@ -53,3 +53,30 @@ def test_edit_budget_per_client():
     assert edit_budget(cfg, "pi") == 8.0 and edit_budget(cfg, "codex") == 3.0 and edit_budget(cfg, None) == 3.0
     cfg = build_config({"completion": {"auto_test_budget_s": 2.0, "auto_test_client_budget_s": {"codex": 4.0}}})
     assert edit_budget(cfg, "codex") == 4.0 and edit_budget(cfg, "claude_code") == 2.0
+
+
+def test_excerpt_shows_named_definitions_of_a_big_file():
+    filler = "\n".join(f"def f{i}():\n    return {i}\n" for i in range(400))
+    text = filler + "\ndef target(x):\n    return x + 1\n\n\nclass K:\n    def method(self):\n        return 2\n"
+    ex = cp.excerpt("m.py", text, "fix `target` and K.method please")
+    assert "def target(x):\n    return x + 1" in ex and "def method(self):" in ex and "def f3" not in ex
+    assert cp.excerpt("m.py", text, "nothing relevant here") is None
+    pack = cp.build(Path("."), ["m.py"], ["m.py"], {"m.py": text}.get, 2500, query="fix target")
+    assert "(excerpt of a" in pack and "def target" in pack and "def f0" not in pack
+
+
+def test_related_tests_and_scope(tmp_path):
+    from arbiter_agent.completion.auto_test import AutoTester, related_tests
+
+    for rel in ("pkg/sub/mod.py", "pkg/sub/tests/test_mod.py", "pkg/other.py", "tests/test_other.py",
+                "pkg/sub/__init__.py", "pkg/sub/tests/test_sub.py", "pyproject.toml"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("", encoding="utf-8")
+    got = related_tests(tmp_path, ["pkg/other.py", str(tmp_path / "pkg/sub/mod.py"), "pkg/sub/__init__.py"])
+    assert got == ["pkg/sub/tests/test_sub.py", "pkg/sub/tests/test_mod.py", "tests/test_other.py"]
+    assert related_tests(tmp_path, ["pkg/nothing.py", "README.md"]) == []
+    t = AutoTester(build_config({"completion": {"auto_test_related_min_test_files": 2}}))
+    assert t.scope(tmp_path) == "related"
+    assert t.command(tmp_path, ["pkg/sub/mod.py"]).endswith("-m pytest -q pkg/sub/tests/test_mod.py")
+    assert t.command(tmp_path, ["pkg/nothing.py"]) is None       # no known tests: no guess at the full suite
+    assert AutoTester(build_config({})).scope(tmp_path) == "full"    # few test files: the whole suite

@@ -1,0 +1,20 @@
+id: rr_ordinal_words
+category: multi_turn
+prompts:
+- 'Add a `words=False` option to SymPy''s `ordinal` helper: with words=True, 1 through 12 are spelled out (''first'',
+  ''second'', ..., ''twelfth''); other numbers keep the numeric form (''13th'').'
+- With words=True, negative numbers get 'minus ' in front ('minus third'), and zero is 'zeroth'.
+- Put the word table in a module-level dict called ORDINAL_WORDS (int -> word) so other code can reuse it, and extend
+  it through 20 ('twentieth').
+requirements:
+  words_1_12: test_words_1_12
+  words_13_20: test_words_13_20
+  numeric_default: test_numeric_default
+  negative: test_negative
+  zero: test_zero
+  table: test_table
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: sympy 1.14.0 (2,033 files); hidden tests check the state after all prompts

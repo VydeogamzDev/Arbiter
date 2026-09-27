@@ -1,0 +1,18 @@
+id: rr_int_partition
+category: multi_turn
+prompts:
+- 'Make `len()` work on SymPy''s IntegerPartition: it should give the number of parts.'
+- 'Add an `is_self_conjugate` property to IntegerPartition: True when the partition equals its conjugate.'
+- 'Extend `IntegerPartition.as_ferrers`: add a `sep` argument (default a newline) placed between the rows, and raise
+  ValueError if `char` is an empty string.'
+requirements:
+  len_parts: test_len_parts
+  self_conjugate: test_self_conjugate
+  ferrers_sep: test_ferrers_sep
+  ferrers_default: test_ferrers_default
+  ferrers_empty_char: test_ferrers_empty_char
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: sympy 1.14.0 (2,033 files); hidden tests check the state after all prompts

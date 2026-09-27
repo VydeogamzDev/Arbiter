@@ -1,0 +1,17 @@
+id: rr_perm_fixed
+category: multi_turn
+prompts:
+- 'Add an `is_involution` property to SymPy''s Permutation: True when applying the permutation twice gives the identity
+  (the identity itself counts).'
+- Also add a `fixed_points()` method that returns a sorted list of the points the permutation leaves in place.
+- 'Change of plan for fixed points: make `fixed_points` a property that returns a tuple instead of a method, like
+  `cycle_structure` is a property. Nothing else in sympy should break.'
+requirements:
+  involution: test_involution
+  fixed_points_values: test_fixed_points_values
+  fixed_points_tuple_property: test_fixed_points_tuple_property
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: sympy 1.14.0 (2,033 files); hidden tests check the state after all prompts

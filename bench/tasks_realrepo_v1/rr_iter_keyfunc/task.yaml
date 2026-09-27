@@ -1,0 +1,20 @@
+id: rr_iter_keyfunc
+category: multi_turn
+prompts:
+- 'Give `common_prefix` and `common_suffix` (sympy.utilities.iterables) a keyword-only `key` argument: two elements
+  match when key(a) == key(b). The result is still a slice of the first sequence, and without `key` nothing changes.'
+- 'Do the same for `runs` in that module: with `key`, `op` is applied to key(element) values, but the runs still
+  hold the original elements.'
+- 'Change of plan: call the argument `keyfunc` in all three functions, like `sift` does. Passing `key=` must still
+  work for now, but emit a DeprecationWarning.'
+requirements:
+  prefix_keyfunc: test_prefix_keyfunc
+  suffix_keyfunc: test_suffix_keyfunc
+  default_unchanged: test_default_unchanged
+  runs_keyfunc: test_runs_keyfunc
+  key_alias_deprecated: test_key_alias_deprecated
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: sympy 1.14.0 (2,033 files); hidden tests check the state after all prompts

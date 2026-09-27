@@ -48,7 +48,8 @@ from bench.conditions import CONDITIONS, PRIMARY, Condition
 BENCH = Path(__file__).resolve().parent
 TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arbiter)
 SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/quality: never tune on these
-          "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1"}
+          "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1",
+          "realrepo_v1": BENCH / "tasks_realrepo_v1"}     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -105,8 +106,25 @@ def git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=env)
 
 
+def repo_dir(task: dict[str, Any]) -> Path:
+    """The task's starting tree: its own ``repo`` folder, or a shared checkout (``repo_src``)."""
+    return Path(task["repo_src"]) if task.get("repo_src") else task["dir"] / "repo"
+
+
+def task_python(task: dict[str, Any]) -> str:
+    """The interpreter the agent's shell, Arbiter's test runs and the scorer use for this task."""
+    return str(task.get("python") or AGENT_PY)
+
+
+def with_task_path(task: dict[str, Any], env: dict[str, str]) -> dict[str, str]:
+    """``python`` on PATH resolves to the task's interpreter (a virtualenv with the repo's deps)."""
+    if task.get("python"):
+        env = {**env, "PATH": str(Path(task["python"]).parent) + os.pathsep + env.get("PATH", "")}
+    return env
+
+
 def prepare_workspace(task: dict[str, Any], ws: Path) -> None:
-    shutil.copytree(task["dir"] / "repo", ws)
+    shutil.copytree(repo_dir(task), ws, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
     (ws / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n*.pyc\n", encoding="utf-8")
     git(ws, "init", "-q", "-b", "main")
     git(ws, "add", "-A")
@@ -135,6 +153,7 @@ class ArbiterRun:
             self.paths.data.mkdir(parents=True, exist_ok=True)
             (self.paths.data / "models.json").write_text(json.dumps({client: known_model}), encoding="utf-8")
         self.proc: subprocess.Popen[bytes] | None = None
+        self.env_extra: dict[str, str] = {}
         config = json.loads(json.dumps(cond.config))
         # The bench root carries a .arbiterignore so the user's real daemon (whose transcript watcher
         # sees every Claude transcript) skips benchmark workspaces; the per-run daemon must not.
@@ -149,6 +168,7 @@ class ArbiterRun:
         from arbiter_agent.daemon import lifecycle
 
         env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")}
+        env.update(self.env_extra)
         self.proc = subprocess.Popen(lifecycle.daemon_argv(self.paths), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
                                      creationflags=0x08000000 if os.name == "nt" else 0)
@@ -158,6 +178,14 @@ class ArbiterRun:
                 return
             time.sleep(0.1)
         raise RuntimeError(f"daemon for {self.paths.root} did not start")
+
+    def index(self, cwd: Path, timeout: float = 300.0) -> dict[str, Any]:
+        """Build the repo index now. An installed daemon indexes a repo once, in the background, and
+        keeps it; a fresh per-run home would otherwise index 2,000 files during the first prompt."""
+        from arbiter_agent.daemon.client import DaemonClient
+
+        with DaemonClient(self.paths) as c:
+            return c.request("retrieve", {"op": "index", "cwd": str(cwd)}, timeout=timeout)
 
     def port(self) -> int | None:
         from arbiter_agent.daemon.client import read_record
@@ -236,7 +264,8 @@ def run_claude(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | N
     settings_file = rundir / "settings.json"
     settings_file.write_text(json.dumps(arb.settings() if arb and arb.cond.hooks else {}), encoding="utf-8")
     sid = str(uuid.uuid4())
-    env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_") and k not in ("CODEX_HOME",)}
+    env = with_task_path(task, {k: v for k, v in os.environ.items()
+                                if not k.startswith("ARBITER_") and k not in ("CODEX_HOME",)})
     turns: list[dict[str, Any]] = []
     for i, prompt in enumerate(task["prompts"]):
         argv = [exe, "-p", "--model", args.model, "--output-format", "json", "--setting-sources", "project",
@@ -297,7 +326,7 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
         if arb.cond.hooks:
             argv.append("--dangerously-bypass-hook-trust")
     argv += json.loads(os.environ.get("ARBITER_BENCH_CODEX_ARGS", "[]"))   # e.g. a mock model provider
-    env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")}
+    env = with_task_path(task, {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")})
     t0 = time.monotonic()
     try:
         proc = subprocess.run([*argv, task["prompts"][0]], cwd=ws, env=env, capture_output=True, text=True,
@@ -357,6 +386,7 @@ def run_pi(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
             "--model", f"{PI_PROVIDER}/{args.model}", "--thinking", args.effort or PI_THINKING]
     env = {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")}
     env.update({"PI_MANAGED_INSTALL_ROOT": str(PI_INSTALL), "PI_OFFLINE": "1", "PI_TELEMETRY": "0"})
+    env = with_task_path(task, env)
     if arb and arb.cond.hooks:
         base += ["-e", str(EXTENSION)]
         env["ARBITER_HOME"] = str(arb.paths.root)
@@ -441,10 +471,16 @@ def run_fake(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | Non
             with (rundir / "fake_contract.txt").open("a", encoding="utf-8") as f:
                 f.write(f"{is_err} {text}\n")
     if host:
-        tests = subprocess.run([AGENT_PY, "-m", "pytest", "-q", "-p", "no:cacheprovider"], cwd=ws,
+        targets: list[str] = []
+        if task.get("repo_src"):        # a real repo's full suite runs for many minutes: its related tests only
+            from arbiter_agent.completion.auto_test import related_tests
+
+            targets = related_tests(ws, [str(f.relative_to(task["dir"] / "solution"))
+                                         for f in (task["dir"] / "solution").rglob("*.py")])
+        tests = subprocess.run([task_python(task), "-m", "pytest", "-q", "-p", "no:cacheprovider", *targets], cwd=ws,
                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
         if variant == "solution":
-            host.tool("python -m pytest -q", tests.stdout[-4000:], tests.returncode)
+            host.tool(" ".join(["python -m pytest -q", *targets]), tests.stdout[-4000:], tests.returncode)
     msg = "Done. All requirements are implemented and the tests pass."
     blocked = []
     if host:
@@ -481,7 +517,11 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
                               "workspace": str(ws)}
     try:
         if arb:
+            arb.env_extra = {k: v for k, v in with_task_path(task, dict(os.environ)).items() if k == "PATH"}
             arb.start()
+            if task.get("pre_index"):
+                t1 = time.monotonic()
+                record["pre_index"] = {**arb.index(ws), "wall_s": round(time.monotonic() - t1, 1)}
         if args.agent == "claude":
             agent = run_claude(task, ws, rundir, arb, args, token)
         elif args.agent == "codex":
@@ -500,7 +540,7 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
         if arb:
             arb.stop()
     try:
-        record["score"] = scoring.score(task["dir"], task, ws, rundir / "score-scratch", AGENT_PY,
+        record["score"] = scoring.score(task["dir"], task, ws, rundir / "score-scratch", task_python(task),
                                         record.get("final_messages") or [])
         shutil.rmtree(rundir / "score-scratch", ignore_errors=True)
     except Exception:
@@ -586,7 +626,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     out = args.out / run_id
     out.mkdir(parents=True, exist_ok=True)
     ignore = out.parent.parent / ".arbiterignore"      # covers <root>/ws and <root>/runs
-    if not ignore.is_file():
+    # Only in a bench root (<root>/runs/<run_id>): `--out <temp dir>` once put one in %TEMP%, and every
+    # test workspace under it was then ignored by Arbiter.
+    if out.parent.name == "runs" and not ignore.is_file():
         ignore.write_text("# Arbiter benchmark workspaces: keep them out of the real Arbiter install.\n",
                           encoding="utf-8")
     jobs = [(t, c, r) for r in range(args.reps) for t in tasks for c in conds]
@@ -662,7 +704,7 @@ def cmd_rescore(run_dir: Path) -> int:
                 subprocess.run(["git", "apply", "--whitespace=nowarn", str(patch)], cwd=ws, check=True,
                                capture_output=True)
             before = record.get("score") or {}
-            record["score"] = scoring.score(task["dir"], task, ws, Path(tmp) / "scratch", AGENT_PY,
+            record["score"] = scoring.score(task["dir"], task, ws, Path(tmp) / "scratch", task_python(task),
                                             record.get("final_messages") or [])
         changed = {k: (before.get(k), record["score"][k]) for k in ("full_pass", "coverage", "tampered")
                    if before.get(k) != record["score"][k]}

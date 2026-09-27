@@ -446,6 +446,10 @@ class Daemon:
             n = len(out.get("hits", []))
             if sid:
                 self.engine.misses.surfaced(sid, [h["path"] for h in out.get("hits", [])], str(params.get("query")))
+        elif op == "index":             # build/refresh the whole index now (setup, benchmarks)
+            ident, idx, _, res = r.prepare(cwd, budget_s=None)
+            out = {"index": idx.stamp(ident.root).to_dict(), "changed": res.changed, "seconds": res.seconds}
+            n = 0
         elif op == "symbol":
             out = r.symbol(cwd, str(params.get("name") or ""), int(params.get("limit") or 30))
             n = len(out.get("definitions", [])) + len(out.get("references", []))

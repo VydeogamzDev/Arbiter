@@ -166,15 +166,21 @@ class RetrievalService:
 
         note = None
         if str(self.config.get("completion.auto_test", "off")) == "after_edit":
-            from arbiter_agent.completion.auto_test import detect_command
+            from arbiter_agent.completion.auto_test import AutoTester
 
-            cmd = self.config.get("completion.auto_test_command") or detect_command(root)
-            if cmd:
+            tester = AutoTester(self.config)
+            cmd = tester.base_command(root)
+            if cmd and tester.scope(root) == "related":
+                note = (f"Tests: after each code edit Arbiter runs the test files for the changed files "
+                        f"(`{cmd} <their test files>`) and adds the result to that edit's tool output.")
+            elif cmd:
                 note = (f"Tests: Arbiter runs `{cmd}` after each code edit and adds the result to that edit's "
                         "tool output.")
         text = context_pack.build(root, files, picks, read, max_tokens,
                                   contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)),
-                                  test_note=note, full=full)
+                                  test_note=note, full=full, query=str(ctx.get("query") or ""),
+                                  hit_lines={**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
+                                         **{q["path"]: int(q.get("line") or 1) for q in ranking.get("pins", [])}})
         map_text = context_pack.build(root, files, picks, read, max_tokens, contents=False, test_note=note)
         return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})
