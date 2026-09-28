@@ -318,3 +318,17 @@ Failures (both full): a wrong rounding formula in a new function with no test fi
 error Arbiter should have caught: 14 quick edits pushed the broken file's test out of the 6-file
 related run, and a test file that fails to load was parsed as UNKNOWN. Both fixed after the run
 (41b617b), not re-measured.
+
+## Codex on the real repos, 3-prompt sessions (2026-09-28)
+
+`--agent codex` (gpt-6-luna, default reasoning) through a benchmark-only Codex home, sessions
+resumed with `codex exec resume`; 3 reps, 30 sessions per repo, no leaks into the real ~/.codex.
+
+| repo | cost index | 95% CI | tool calls | by prompt (1st/2nd/3rd) | passed off / on |
+|---|---|---|---|---|---|
+| sympy (`realrepo_v1`) | 2.07M -> 1.82M, **-12%** | -22% to -6% | 179 -> 126 | -16% / -12% / -11% | 15/15 / 15/15 |
+| date-fns (`realrepo_js_v1`) | 2.13M -> 1.70M, **-20%** | -31% to -8% | 163 -> 109 | -27% / -21% / -17% | 15/15 / 15/15 |
+
+No stop blocks, tampering or false "done" claims. Smaller than Pi's -31% on the same repos because
+Codex re-sends ~15k tokens of fixed context with every request. The date-fns runs include 41b617b
+(vitest load failures, related-run coverage); the Pi date-fns run did not.
