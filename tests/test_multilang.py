@@ -19,6 +19,7 @@ def touch(root: Path, *rels: str, text: str = "") -> None:
 def test_test_file_names():
     assert is_test_file("cart.test.ts") and is_test_file("cart.spec.jsx") and is_test_file("cart_test.go")
     assert is_test_file("test_cart.py") and not is_test_file("cart.ts") and not is_test_file("testing.go")
+    assert is_test_file("test.ts") and not is_test_file("index.ts")
 
 
 def test_jest_and_vitest_find_related_tests_themselves(tmp_path):
@@ -27,12 +28,16 @@ def test_jest_and_vitest_find_related_tests_themselves(tmp_path):
     assert runner_kind(tmp_path, "npm test --silent") == "jest"
     t = AutoTester(RELATED)
     assert t.scope(tmp_path) == "related"
-    assert t.command(tmp_path, ["src/cart.ts"]) == "npx jest --findRelatedTests src/cart.ts --passWithNoTests"
+    assert t.command(tmp_path, ["src/cart.ts"]) == "npx jest src/cart.test.ts"          # its own test file
+    touch(tmp_path, "src/util.ts")
+    assert t.command(tmp_path, ["src/util.ts"]) == "npx jest --findRelatedTests src/util.ts --passWithNoTests"
     assert t.command(tmp_path, ["README.md"]) is None
     (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test": "vitest"}}), encoding="utf-8")
     t = AutoTester(RELATED)
-    assert t.command(tmp_path, [str(tmp_path / "src/cart.ts")]) == \
-        "npx vitest related --run src/cart.ts --passWithNoTests"
+    assert t.command(tmp_path, [str(tmp_path / "src/cart.ts")]) == "npx vitest run src/cart.test.ts"
+    assert t.command(tmp_path, ["src/util.ts"]) == "npx vitest related --run src/util.ts --passWithNoTests"
+    touch(tmp_path, "src/addDays/index.ts", "src/addDays/test.ts")             # date-fns layout
+    assert t.command(tmp_path, ["src/addDays/index.ts"]) == "npx vitest run src/addDays/test.ts"
 
 
 def test_other_node_runner_gets_mapped_test_files(tmp_path):

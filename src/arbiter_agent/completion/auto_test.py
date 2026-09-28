@@ -142,7 +142,9 @@ def is_test_file(name: str) -> bool:
         return name.startswith("test_") or name.endswith("_test.py")
     if name.endswith("_test.go"):
         return True
-    return name.endswith(JS_EXTS) and (".test." in name or ".spec." in name)
+    # foo.test.ts, foo.spec.js, and a bare test.ts beside the source (date-fns: addDays/test.ts)
+    return name.endswith(JS_EXTS) and (".test." in name or ".spec." in name
+                                       or name.split(".", 1)[0] in ("test", "tests", "spec"))
 
 
 def count_test_files(root: Path, stop_at: int = 1000) -> int:
@@ -179,6 +181,10 @@ def related_tests(root: Path, changed: list[str]) -> list[str]:
                 names: tuple[str, ...] = (f"test_{stem}.py", f"{stem}_test.py")
             else:                    # src/cart.ts -> cart.test.ts, cart.spec.ts, __tests__/cart.test.ts
                 stem = rel.name.split(".", 1)[0]
+                if stem == "index":      # src/addDays/index.ts -> src/addDays/test.ts (date-fns layout)
+                    stem = rel.parent.name
+                    found += [rel.parent / f"{t}{ext}" for t in ("test", "tests", "spec") for ext in JS_EXTS
+                              if (rroot / rel.parent / f"{t}{ext}").is_file()]
                 names = tuple(f"{stem}.{kind}{ext}" for kind in ("test", "spec") for ext in JS_EXTS)
             d = rel.parent
             while True:
@@ -312,7 +318,12 @@ class AutoTester:
         quote = lambda xs: " ".join(f'"{x}"' if " " in x else x for x in xs)  # noqa: E731
         rels = _rel_paths(root, changed or [])
         if kind in ("jest", "vitest"):
-            # The runner maps changed sources to the tests that import them (its own module graph).
+            # A file's own tests by name first; the runner's related mode (its module graph) only when
+            # there are none: for a widely imported module it selects half the suite (date-fns addDays:
+            # 893 tests, 12.5 s, past the post-edit window).
+            mapped = related_tests(root, changed or [])
+            if mapped:
+                return f"npx {'jest' if kind == 'jest' else 'vitest run'} {quote(mapped)}"
             src = [r for r in rels if r.endswith(JS_EXTS)][-MAX_RELATED:]
             if not src:
                 return None
