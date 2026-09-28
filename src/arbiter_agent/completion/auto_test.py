@@ -205,6 +205,28 @@ def related_tests(root: Path, changed: list[str]) -> list[str]:
     return out[:MAX_RELATED]
 
 
+def _tracked(root: Path, rel: str) -> bool:
+    """Whether git knows the file (True outside git: nothing to tell)."""
+    import subprocess
+
+    try:
+        r = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", rel], capture_output=True,
+                           timeout=5, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return r.returncode == 0 or b"not a git repository" in r.stderr.lower()
+
+
+def _is_barrel(path: Path) -> bool:
+    """A module that only re-exports (``export * from "./x.js"``, ``export { a } from "./a"``)."""
+    try:
+        lines = [ln.strip() for ln in path.read_text("utf-8", errors="replace").splitlines()]
+    except OSError:
+        return False
+    code = [ln for ln in lines if ln and not ln.startswith(("//", "/*", "*"))]
+    return bool(code) and all(ln.startswith("export") and " from " in ln for ln in code)
+
+
 def _rel_paths(root: Path, changed: list[str]) -> list[str]:
     rroot = root.resolve()
     out: list[str] = []
@@ -324,7 +346,10 @@ class AutoTester:
             mapped = related_tests(root, changed or [])
             if mapped:
                 return f"npx {'jest' if kind == 'jest' else 'vitest run'} {quote(mapped)}"
-            src = [r for r in rels if r.endswith(JS_EXTS)][-MAX_RELATED:]
+            # Barrels (files that only re-export, like date-fns' src/index.ts) relate to everything.
+            # A brand-new file has no importing tests yet: a related run would pass with zero tests.
+            src = [r for r in rels if r.endswith(JS_EXTS) and not _is_barrel(root / r)
+                   and _tracked(root, r)][-MAX_RELATED:]
             if not src:
                 return None
             return (f"npx jest --findRelatedTests {quote(src)} --passWithNoTests" if kind == "jest"

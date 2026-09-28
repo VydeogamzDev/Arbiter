@@ -124,3 +124,21 @@ def test_colored_runner_output_parses():
     out = "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m16 passed\x1b[39m\x1b[22m\x1b[90m (16)\x1b[39m\n"
     r = detect("npx vitest run src/addDays/test.ts", out, 0)
     assert r is not None and r.passed == 16 and r.status == "pass"
+
+
+def test_js_fallback_skips_barrels_and_new_files(tmp_path):
+    import subprocess
+
+    touch(tmp_path, "src/util.ts", "src/other.test.ts", "src/more.test.ts")
+    (tmp_path / "src/index.ts").write_text('export * from "./util.js";\nexport { a } from "./a.js";\n',
+                                           encoding="utf-8")
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test": "vitest"}}), encoding="utf-8")
+    for args in (["init", "-q"], ["add", "-A"],
+                 ["-c", "user.name=t", "-c", "user.email=t@l", "commit", "-qm", "i"]):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+    touch(tmp_path, "src/brandNew.ts")
+    t = AutoTester(RELATED)
+    assert t.command(tmp_path, ["src/index.ts"]) is None                      # a barrel relates to everything
+    assert t.command(tmp_path, ["src/brandNew.ts"]) is None                   # new: no importing tests yet
+    assert t.command(tmp_path, ["src/util.ts", "src/index.ts"]) == \
+        "npx vitest related --run src/util.ts --passWithNoTests"
