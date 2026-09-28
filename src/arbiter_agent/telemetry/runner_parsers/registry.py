@@ -74,9 +74,13 @@ def parse_vitest(out: str) -> RunnerResult | None:
     s = m[-1]
     failed, passed, skipped = _count("failed", s), _count("passed", s), _count("skipped", s)
     total_m = re.search(r"\((\d+)\)", s)
-    status = "fail" if failed else ("pass" if passed else "unknown")
+    # A test file that fails to load (a syntax error: "Transform failed") runs no tests; only the
+    # "Test Files 1 failed" line says so. Such a run was recorded as UNKNOWN on date-fns (2026-09-27).
+    files = re.findall(r"^\s*Test Files\s+(.+)$", out, re.M)
+    file_failed = _count("failed", files[-1]) if files else 0
+    status = "fail" if failed or file_failed else ("pass" if passed else "unknown")
     total = int(total_m.group(1)) if total_m else None
-    return RunnerResult("vitest", "test", status, passed, failed, 0, skipped, total)
+    return RunnerResult("vitest", "test", status, passed, max(failed, file_failed), 0, skipped, total)
 
 
 def parse_mocha(out: str) -> RunnerResult | None:

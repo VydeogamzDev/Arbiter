@@ -142,3 +142,14 @@ def test_js_fallback_skips_barrels_and_new_files(tmp_path):
     assert t.command(tmp_path, ["src/brandNew.ts"]) is None                   # new: no importing tests yet
     assert t.command(tmp_path, ["src/util.ts", "src/index.ts"]) == \
         "npx vitest related --run src/util.ts --passWithNoTests"
+
+
+def test_vitest_file_that_fails_to_load_is_a_failure():
+    from arbiter_agent.telemetry.runner_parsers.registry import detect
+
+    out = (" FAIL  src/nextSunday/test.ts [ src/nextSunday/test.ts ]\n"
+           "Error: Transform failed with 1 error:\n"
+           " Test Files  1 failed | 5 passed (6)\n"
+           "      Tests  30 passed (30)\n")
+    r = detect("npx vitest run src/nextSunday/test.ts", out, 1)
+    assert r is not None and r.status == "fail" and r.failed == 1

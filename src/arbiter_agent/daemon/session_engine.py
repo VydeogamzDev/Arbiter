@@ -1156,6 +1156,11 @@ class SessionEngine:
             return None
         self._test_announced[sid] = out.state
         self._record_auto_test(sid, out)
+        if out.result.status == "pass":
+            # The next run covers what changed after this pass. Keeping every changed file, capped to
+            # the most recent, dropped earlier ones: on date-fns, 14 quick edits left nextSunday's test
+            # out of the run and its syntax error unreported (2026-09-27).
+            self._changed[sid] = []
         if out.result.status == "unknown":
             # A run that couldn't produce a result (collection or environment error) is said once per
             # session, not after every edit (seen on a real install: the same ImportError each time).

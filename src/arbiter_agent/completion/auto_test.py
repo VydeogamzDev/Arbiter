@@ -33,7 +33,7 @@ from arbiter_agent.completion import verify_runner as vr
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache", ".mypy_cache", ".ruff_cache",
              "dist", "build", "target", ".tox", ".idea", ".vscode", ".arbiter"}
 MAX_FINGERPRINT_FILES = 5000
-MAX_RELATED = 6           # test files in one related run
+MAX_RELATED = 20          # test files in one related run (files changed since the last pass)
 CODE_SUFFIXES = {".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".rb",
                  ".cs", ".c", ".cc", ".cpp", ".h", ".hpp", ".swift", ".php", ".scala", ".toml", ".cfg", ".ini",
                  ".json", ".yaml", ".yml"}
