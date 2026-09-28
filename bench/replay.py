@@ -33,8 +33,10 @@ from pathlib import Path
 
 RUNS = Path("D:/ArbiterBench/runs")
 CODEX_SESSIONS = Path("D:/ArbiterBench/codex-home/sessions")
-SEARCH = re.compile(r"(?:^|[\s;|&(])(?:rg|grep|findstr|Select-String|find|ls|dir|Get-ChildItem|git\s+(?:grep|ls-files))\b")
-READ = re.compile(r"(?:^|[\s;|&(])(?:Get-Content|cat|type|sed\s+-n|head|tail|more)\s+(?:-\S+\s+)*[\"']?([\w./\\-]+\.\w+)")
+SEARCH = re.compile(r"(?:^|[\s;|&(])(?:rg|grep|findstr|Select-String|find|ls|dir|Get-ChildItem|"
+                    r"git\s+(?:grep|ls-files))\b")
+READ = re.compile(r"(?:^|[\s;|&(])(?:Get-Content|cat|type|sed\s+-n|head|tail|more)\s+(?:-\S+\s+)*"
+                  r"[\"']?([\w./\\-]+\.\w+)")
 TEST = re.compile(r"pytest|vitest|jest|npm\s+test|go\s+test")
 PATHLIKE = re.compile(r"[\w./\\-]+\.(?:py|ts|tsx|js|jsx|mjs|go|rs|md|json)\b")
 IDENT = re.compile(r"`([A-Za-z_$][\w$.]*)")
@@ -132,7 +134,7 @@ def load_pi(run: str, cond: str, repo: str) -> list[Session]:
             if o.get("type") == "tool_execution_end":
                 txt = "".join(x.get("text", "") for x in o["result"].get("content") or [])
                 outputs[o["toolCallId"]] = len(txt) // 4
-                for req, ids in pending:
+                for _req, ids in pending:
                     for c, cid in ids:
                         if cid == o["toolCallId"]:
                             c.out_tokens = len(txt) // 4
@@ -306,8 +308,6 @@ def analyze(sessions: list[Session]) -> dict:
                     predictable_all = False
                 else:
                     predictable_all = False
-            for c in r.calls:
-                prior_out_paths |= set()       # search hits aren't recorded per path; kept for Pi below
             if predictable_all:
                 for t in req_tags:
                     by_tag_cost[t] += r.cost / len(req_tags)
@@ -316,7 +316,8 @@ def analyze(sessions: list[Session]) -> dict:
                 attach_cost += attach
     return {"sessions": len(sessions), "requests": reqs, "lookups": lookups, "tags": tag,
             "removable_requests": removable, "cost": total_cost, "removable_cost": removable_cost,
-            "attach_cost": attach_cost, "by_tag_cost": by_tag_cost, "test_reads": test_reads, "test_read_tokens": test_read_tokens}
+            "attach_cost": attach_cost, "by_tag_cost": by_tag_cost, "test_reads": test_reads,
+            "test_read_tokens": test_read_tokens}
 
 
 def masking(sessions: list[Session]) -> tuple[float, float, float]:
@@ -381,7 +382,8 @@ def main() -> None:
               f"{a['lookups']} lookups")
         for k, v in a["tags"].most_common():
             print(f"    {k:14s} {v:4d}")
-        print(f"  removable requests: {a['removable_requests']} ({100 * a['removable_requests'] / max(1, a['requests']):.0f}%), "
+        share = 100 * a["removable_requests"] / max(1, a["requests"])
+        print(f"  removable requests: {a['removable_requests']} ({share:.0f}%), "
               f"their cost {100 * a['removable_cost'] / a['cost']:.1f}% of total, attached content "
               f"{100 * a['attach_cost'] / a['cost']:.1f}% -> net {100 * net / a['cost']:.1f}%")
         print("  removable cost by reason:", ", ".join(f"{k} {100 * v / a['cost']:.1f}%"
