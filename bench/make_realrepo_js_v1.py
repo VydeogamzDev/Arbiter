@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (embedded TypeScript source and test data)
 """Generate realrepo_js_v1: five 3-prompt sessions on date-fns 4.1.0 (TypeScript, vitest, 1,727 files).
 
 Written before Arbiter was ever run on this repo, so nothing here was tuned against it. Set up once:
