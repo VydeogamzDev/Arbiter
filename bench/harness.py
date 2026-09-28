@@ -12,6 +12,8 @@ real Arbiter, Claude or Codex configuration: user settings are excluded with
 ``--setting-sources project`` and MCP servers with ``--strict-mcp-config``. Claude's per-project
 transcript folder for each workspace is copied into the results and then removed.
 
+Codex runs with a benchmark-only Codex home (ARBITER_BENCH_CODEX_HOME, default D:/ArbiterBench/codex-home,
+its own sign-in) keep their sessions there and resume them for follow-up prompts. Without one:
 Codex runs use ``codex exec --ignore-user-config --ephemeral``: the real CODEX_HOME supplies only the
 sign-in (so a refreshed token is never written to a copy) and hooks.json (Arbiter's MCP-tool hooks,
 enabled for Arbiter conditions with ``--dangerously-bypass-hook-trust``; in baseline they stay
@@ -319,58 +321,93 @@ def run_claude(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | N
             "errors": sum(1 for t in turns if t["exit"] != 0 or t["is_error"])}
 
 
+def codex_bench_home() -> Path | None:
+    """A Codex home used only by the benchmark (its own sign-in), or None. With one, Codex runs keep
+    their sessions there, so multi-prompt tasks can resume; without, they run ephemeral against the
+    real CODEX_HOME and multi-prompt tasks are skipped. It carries Arbiter's standard Codex hooks,
+    which only Arbiter conditions enable (--dangerously-bypass-hook-trust)."""
+    home = Path(os.environ.get("ARBITER_BENCH_CODEX_HOME", "D:/ArbiterBench/codex-home"))
+    if not (home / "auth.json").is_file():
+        return None
+    from arbiter_agent.clients.codex import hooks as codex_hooks
+
+    hooks = home / "hooks.json"
+    want = json.dumps({"hooks": {ev: [g] for ev, g in codex_hooks.hook_groups().items()}}, indent=2)
+    if not hooks.is_file() or hooks.read_text("utf-8") != want:
+        hooks.write_text(want, encoding="utf-8")
+    return home
+
+
 def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
               args: argparse.Namespace) -> dict[str, Any]:
     from arbiter_agent.clients.client_env import arbiter_command
 
-    argv = [CODEX, "exec", "--ignore-user-config", "--ephemeral", "--json", "-m", args.model,
-            "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-C", str(ws),
-            *(["-c", f'model_reasoning_effort="{args.effort}"'] if args.effort else [])]
+    home = codex_bench_home()
+    flags = ["--ignore-user-config", "--json", "-m", args.model, "--dangerously-bypass-approvals-and-sandbox",
+             "--skip-git-repo-check", *(["-c", f'model_reasoning_effort="{args.effort}"'] if args.effort else [])]
+    if home is None:
+        flags.append("--ephemeral")
     if arb and arb.cond.uses_arbiter:
         cmd = arbiter_command(arb.paths.root)
-        argv += ["-c", f"mcp_servers.arbiter.command={json.dumps(cmd[0])}",
-                 "-c", f"mcp_servers.arbiter.args={json.dumps(cmd[1:])}"]
+        flags += ["-c", f"mcp_servers.arbiter.command={json.dumps(cmd[0])}",
+                  "-c", f"mcp_servers.arbiter.args={json.dumps(cmd[1:])}"]
         if arb.cond.hooks:
-            argv.append("--dangerously-bypass-hook-trust")
-    argv += json.loads(os.environ.get("ARBITER_BENCH_CODEX_ARGS", "[]"))   # e.g. a mock model provider
+            flags.append("--dangerously-bypass-hook-trust")
+    flags += json.loads(os.environ.get("ARBITER_BENCH_CODEX_ARGS", "[]"))   # e.g. a mock model provider
     env = with_task_path(task, {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")})
-    t0 = time.monotonic()
-    try:
-        proc = subprocess.run([*argv, task["prompts"][0]], cwd=ws, env=env, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=args.timeout, stdin=subprocess.DEVNULL)
-        out, err, code = proc.stdout, proc.stderr, proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        out = exc.stdout if isinstance(exc.stdout, str) else ""
-        err, code = "timeout", None
-    (rundir / "events.jsonl").write_text(out, encoding="utf-8")
-    usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_output_tokens": 0}
+    if home is not None:
+        env["CODEX_HOME"] = str(home)
+    turns: list[dict[str, Any]] = []
     messages: list[str] = []
-    tools = errors = 0
-    for line in out.splitlines():
+    thread: str | None = None
+    for i, prompt in enumerate(task["prompts"]):
+        argv = ([CODEX, "exec", *flags, "-C", str(ws), prompt] if i == 0
+                else [CODEX, "exec", "resume", *flags, str(thread), prompt])
+        t0 = time.monotonic()
         try:
-            o = json.loads(line)
-        except ValueError:
-            continue
-        if o.get("type") == "turn.completed":
-            for k in usage:
-                usage[k] += int((o.get("usage") or {}).get(k) or 0)
-        elif o.get("type") == "turn.failed":
-            errors += 1
-        elif o.get("type") == "item.completed":
-            item = o.get("item") or {}
-            if item.get("type") == "agent_message":
-                messages.append(str(item.get("text") or ""))
-            elif item.get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
-                tools += 1
-    uncached = usage["input_tokens"] - usage["cached_input_tokens"]
-    index = uncached + CODEX_CACHED_RATIO * usage["cached_input_tokens"] + CODEX_OUTPUT_RATIO * usage["output_tokens"]
-    wall = round(time.monotonic() - t0, 1)
-    return {"turns": [{"exit": code, "wall_s": wall, "stderr": err[-2000:], "usage": usage}],
-            "final_messages": [messages[-1] if messages else ""], "cost_usd": None,
-            "cost_index": round(index), "num_turns": tools, "agent_wall_s": wall,
-            "output_tokens": usage["output_tokens"], "reasoning_tokens": usage["reasoning_output_tokens"],
-            "input_tokens": usage["input_tokens"], "cached_input_tokens": usage["cached_input_tokens"],
-            "permission_denials": 0, "errors": errors + (1 if code != 0 else 0)}
+            proc = subprocess.run(argv, cwd=ws, env=env, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=args.timeout, stdin=subprocess.DEVNULL)
+            out, err, code = proc.stdout, proc.stderr, proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            out = exc.stdout if isinstance(exc.stdout, str) else ""
+            err, code = "timeout", None
+        with (rundir / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write(out)
+        usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_output_tokens": 0}
+        tools = errors = 0
+        last = ""
+        for line in out.splitlines():
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if o.get("type") == "thread.started" and not thread:
+                thread = o.get("thread_id")
+            elif o.get("type") == "turn.completed":
+                for k in usage:
+                    usage[k] += int((o.get("usage") or {}).get(k) or 0)
+            elif o.get("type") == "turn.failed":
+                errors += 1
+            elif o.get("type") == "item.completed":
+                item = o.get("item") or {}
+                if item.get("type") == "agent_message":
+                    last = str(item.get("text") or "") or last
+                elif item.get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
+                    tools += 1
+        messages.append(last)
+        turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:],
+                      "usage": usage, "tools": tools, "errors": errors})
+        if code is None or not thread:
+            break
+    tot = {k: sum(t["usage"][k] for t in turns) for k in turns[0]["usage"]}
+    uncached = tot["input_tokens"] - tot["cached_input_tokens"]
+    index = uncached + CODEX_CACHED_RATIO * tot["cached_input_tokens"] + CODEX_OUTPUT_RATIO * tot["output_tokens"]
+    return {"turns": turns, "final_messages": messages, "cost_usd": None, "cost_index": round(index),
+            "num_turns": sum(t["tools"] for t in turns), "agent_wall_s": round(sum(t["wall_s"] for t in turns), 1),
+            "output_tokens": tot["output_tokens"], "reasoning_tokens": tot["reasoning_output_tokens"],
+            "input_tokens": tot["input_tokens"], "cached_input_tokens": tot["cached_input_tokens"],
+            "thread_id": thread, "codex_home": str(home) if home else None, "permission_denials": 0,
+            "errors": sum(t["errors"] + (1 if t["exit"] != 0 else 0) for t in turns)}
 
 
 def pi_cli() -> list[str]:
@@ -624,7 +661,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         args.model = CODEX_MODEL if args.agent in ("codex", "pi") else MODEL
     tasks = load_tasks(args.tasks, args.suite)
     skipped = []
-    if args.agent == "codex":
+    if args.agent == "codex" and codex_bench_home() is None:
         skipped = [t["id"] for t in tasks if len(t["prompts"]) > 1]
         tasks = [t for t in tasks if len(t["prompts"]) == 1]
         if skipped:
