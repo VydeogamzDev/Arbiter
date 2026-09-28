@@ -28,6 +28,7 @@ STOP = {"the", "a", "an", "is", "are", "to", "of", "in", "on", "for", "and", "or
         "write", "one", "tests", "test", "exist", "values", "support", "need", "needs"}
 _IDENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:_[A-Za-z0-9_]+|[a-z][A-Z][A-Za-z0-9]*))\b")
 MAX_DEFINERS = 3          # a named symbol defined in more files than this pins none of them
+_DOTTED = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\b")
 # `name` or `Class.method` in backticks: a code name even when it's a plain word (`ordinal`, `runs`).
 _TICKED = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^`]*\))?`")
 
@@ -41,6 +42,12 @@ def named_symbols(query: str, project_names: set[str]) -> list[str]:
         out += m.split(".")
     out += _IDENT.findall(query)
     return [n for n in dict.fromkeys(out) if n.lower() not in project_names and len(n) > 2]
+
+
+def names_code(query: str) -> bool:
+    """Whether a prompt names code at all (a symbol, a dotted module, a file path): cheap, no index."""
+    return bool(named_symbols(query, set()) or _DOTTED.search(query)
+                or re.search(r"[\w./-]+\.[A-Za-z]{1,5}\b", query))
 
 
 _TRACE = [
@@ -156,6 +163,13 @@ def gather(idx: Any, root: str, ctx: QueryContext, *, deps: dict[str, set[str]] 
         hit = _match_file(p, files)
         if hit:
             c.pins.setdefault(hit, "changed in this task")
+    # Dotted module names ("sympy.utilities.iterables", "from sympy.ntheory import x"): that module's file.
+    for dotted in dict.fromkeys(_DOTTED.findall(ctx.query)):
+        base = dotted.replace(".", "/")
+        for cand in (f"{base}.py", f"{base}/__init__.py", f"src/{base}.py", f"src/{base}/__init__.py"):
+            if cand in fileset:
+                c.pins.setdefault(cand, f"module {dotted} named by the user")
+                break
     project = {PurePosixPath(root.replace("\\", "/")).name.lower()} | {f.split("/", 1)[0].lower() for f in files
                                                                      if "/" in f}
     named = list(dict.fromkeys(ctx.symbols + named_symbols(ctx.query, project)))

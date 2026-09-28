@@ -112,8 +112,20 @@ def excerpt(path: str, text: str, query: str, line: int | None = None, classes: 
     lines = text.splitlines()
     out: list[str] = []
     used = 0
+    classes_by_start = {n.lineno: n for n in chosen if isinstance(n, ast.ClassDef)}
     for start, end, _name in sorted(set(spans)):
         seg = "\n".join(lines[start - 1:end])
+        cls = classes_by_start.get(start)
+        if cls is not None and len(seg) > MAX_FILE_CHARS // 2:
+            # A big class: its outline with line numbers (where things are, where to add) rather
+            # than a body cut off mid-way. sympy's IntegerPartition (~9,000 characters) was cut, and
+            # the agent read the rest itself (2026-09-27).
+            members = [f"{lines[m.lineno - 1].rstrip()}    # line {m.lineno}" for m in cls.body
+                       if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+            seg = "\n".join([lines[start - 1].rstrip()] + members)
+            out.append(f"# class outline, lines {start}-{end}\n{seg}")
+            used += len(seg)
+            continue
         if used + len(seg) > MAX_FILE_CHARS:
             if not out:
                 out.append(seg[:MAX_FILE_CHARS] + "\n... (cut)")
@@ -142,13 +154,14 @@ def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_
     """Pins, then the top of the ranking, then what the top picks import, then their tests. With a
     pin (a file the prompt names or that defines a named symbol) the ranking adds no guesses:
     on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task)."""
-    head = list(dict.fromkeys(pins + ([] if pins else ranked[:3])))
+    strong = [p for p in pins if not p.endswith("__init__.py")]     # a package init is where, not what
+    head = list(dict.fromkeys(pins + ([] if strong else ranked[:3])))
     out = list(head)
     for p in head[:3]:
         out += sorted(d for d in deps.get(p, set()) if d in files)
     for p in head[:2]:
         out += tests_of(p)
-    if not pins:
+    if not strong:
         out += ranked[3:5]
     seen: list[str] = []
     for p in out:

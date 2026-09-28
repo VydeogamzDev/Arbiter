@@ -900,8 +900,17 @@ class SessionEngine:
             last = intent_log.load_intents(rc, sid, int(st["intent_count"])) if st else []
         finally:
             rc.close()
-        if not st or not last or int(st["epoch_start_ordinal"] or 0) != int(st["intent_count"]):
-            return None                                    # not a new task
+        if not st or not last:
+            return None
+        if int(st["epoch_start_ordinal"] or 0) != int(st["intent_count"]):
+            # Not a new task. A follow-up that continues it still gets the pins-only pack below (files
+            # it names that the conversation lacks): on sympy, such prompts got no pack and the agent
+            # read the named function itself (2026-09-27). Only when it names code at all: a retrieval
+            # call per prompt is otherwise wasted work on the hook path.
+            from arbiter_agent.retrieval.candidates import names_code
+
+            if not self._known.get(sid) or not names_code(last[-1].text[:2000]):
+                return None
         cwd = self.session_cwd(sid)
         if not cwd or self.context_provider is None:
             return None

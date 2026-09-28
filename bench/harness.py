@@ -390,6 +390,7 @@ def run_pi(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
     if arb and arb.cond.hooks:
         base += ["-e", str(EXTENSION)]
         env["ARBITER_HOME"] = str(arb.paths.root)
+        env.update(dict(arb.cond.agent_env))
     turns: list[dict[str, Any]] = []
     messages: list[str] = []
     for prompt in task["prompts"]:

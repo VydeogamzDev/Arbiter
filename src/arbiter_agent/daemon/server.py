@@ -435,12 +435,16 @@ class Daemon:
                                             "use your own search tools")
 
     def _warm_tests(self, cwd: str) -> None:
-        try:
-            from arbiter_agent.state.repo_identity import identify
+        """Off the hook path: identify() runs git, and warm() walks the repo."""
+        def job() -> None:
+            try:
+                from arbiter_agent.state.repo_identity import identify
 
-            self.engine.auto_tester.warm(identify(cwd).root)
-        except Exception:
-            pass
+                self.engine.auto_tester.warm(identify(cwd).root)
+            except Exception:
+                pass
+
+        threading.Thread(target=job, name="arbiter-test-warm", daemon=True).start()
 
     def _retrieve(self, params: dict[str, Any]) -> Any:
         assert self.retrieval is not None

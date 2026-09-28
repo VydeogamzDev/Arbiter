@@ -25,6 +25,7 @@ SHELL_TOOLS = {"bash", "powershell", "exec_command", "exec", "shell", "local_she
                "terminal", "execute_command", "run_terminal_cmd", "run_in_terminal", "runinterminal",
                "run_shell_command"}
 EDIT_TOOLS = {"edit", "write", "multiedit", "notebookedit", "apply_patch", "str_replace_based_edit_tool",
+              "insert_code", "replace_def",   # Arbiter's Pi edit tools (clients/pi/edit_tools.ts)
               "str_replace_editor", "create_file", "write_file", "edit_file", "replace_in_file",
               "insert_edit_into_file", "replace_string_in_file", "search_replace", "multi_replace_string_in_file"}
 PATCH_PATH = re.compile(r"\*\*\* (?:Update|Add|Delete) File: ([^\n\\\"]+)")
@@ -169,6 +170,11 @@ def from_hook(event_type: str, payload: dict[str, Any]) -> list[FactDraft]:
         return shell_result(_shell_command(tin), output, exit_code=exit_code, is_error=is_err,
                             interrupted=interrupted, origin="host_reported", tool_use_id=tid)
     if lname in EDIT_TOOLS or (lname.startswith("mcp__") and any(w in lname for w in ("write", "edit", "patch"))):
+        resp = payload.get("tool_response")
+        if isinstance(resp, dict) and resp.get("is_error") is True:
+            # A failed edit changed nothing; counting it made the gate ask for a test run after it
+            # (three stop blocks after one rejected edit, 2026-09-27).
+            return []
         return [FactDraft("file_change", "host_reported", p, "n/a", {"tool": name[:60]},
                           f"{tid}:{i}" if tid else None) for i, p in enumerate(edit_paths(name, tin))]
     return []

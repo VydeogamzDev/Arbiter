@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { registerEditTools } from "./edit_tools.ts";
 
 const CLIENT = "pi";
 const TOKEN_HEADER = "X-Arbiter-Token";
@@ -24,6 +25,10 @@ const TOKEN_HEADER = "X-Arbiter-Token";
 const DEADLINE_MS: Record<string, number> = { UserPromptSubmit: 6500, PostToolUse: 9500, PostToolUseFailure: 9500,
   Stop: 4600 };
 const MAX_STOP_BLOCKS = 3;
+// Pi can run several tool calls from one response together, but on sympy it sent all 94 of its edits
+// one per request, each re-sending the conversation (2026-09-27). One line in the system prompt.
+const BATCH_GUIDELINE = "When a change needs several edits (code and its tests, or more than one file), make all of " +
+  "those tool calls in the same response: they run together, and Arbiter tests the result once.";
 
 function arbiterState(): string {
   const home = process.env.ARBITER_HOME;
@@ -52,6 +57,7 @@ function textOf(content: unknown): string {
 }
 
 export default function (pi: any) {
+  if (process.env.ARBITER_PI_EDIT_TOOLS === "1") registerEditTools(pi);
   let target: { port: number; token: string } | undefined;
   let prompts = 0;
   let stopBlocks = 0;
@@ -95,6 +101,9 @@ export default function (pi: any) {
     prompts += 1;
     stopBlocks = 0;
     const out = await send("UserPromptSubmit", ctx, { prompt: event.prompt });
+    const guides = event.systemPromptOptions?.promptGuidelines;
+    if (target && Array.isArray(guides) && !guides.includes(BATCH_GUIDELINE)) guides.push(BATCH_GUIDELINE);
+    else if (target && event.systemPromptOptions && !guides) event.systemPromptOptions.promptGuidelines = [BATCH_GUIDELINE];
     const text = context(out);
     return text ? { message: { customType: "arbiter", content: text, display: false } } : undefined;
   });

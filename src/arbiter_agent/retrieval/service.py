@@ -161,6 +161,19 @@ class RetrievalService:
         else:
             picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
             full = context_pack.core(ranked, pins, deps, tests_of, set(files))
+            # The package __init__ that re-exports the top file: adding a public function means
+            # exporting it there (every digital_root run on sympy read ntheory/__init__.py itself).
+            # A package's hub __init__ (sympy/__init__.py: 161 importers) isn't task context; a hub module
+            # can be (sympy's permutations.py is imported by 30+ files and was the target).
+            picks = [p for p in picks if p in pins or not (p in hubs and p.endswith("__init__.py"))]
+            strongest = pins[:3] or [p for p in picks if not p.endswith("__init__.py")][:1]
+            for top in strongest:
+                init = f"{top.rsplit('/', 1)[0]}/__init__.py" if "/" in top else None
+                if init and init in set(files) and init in (rev or {}).get(top, set()):
+                    picks = [p for p in picks if p != init]
+                    picks.insert(min(2, len(picks)), init)
+                    full.add(init)
+                    break
         root = Path(ident.root)
 
         def read(rel: str) -> str | None:
@@ -182,10 +195,12 @@ class RetrievalService:
             cmd = tester.base_command(root)
             if cmd and tester.scope(root) == "related":
                 note = (f"Tests: after each code edit Arbiter runs the test files for the changed files "
-                        f"(`{cmd} <their test files>`) and adds the result to that edit's tool output.")
+                        f"(`{cmd} <their test files>`) and adds the result to that edit's tool output. Make all "
+                        "the edits a change needs in one response: they run together and are tested once.")
             elif cmd:
                 note = (f"Tests: Arbiter runs `{cmd}` after each code edit and adds the result to that edit's "
-                        "tool output.")
+                        "tool output. Make all the edits a change needs in one response: they run together and "
+                        "are tested once.")
         skip = {str(s).replace("\\", "/") for s in ctx.get("skip") or []}
         shown_keys: list[str] = []
         hit_lines = {**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
