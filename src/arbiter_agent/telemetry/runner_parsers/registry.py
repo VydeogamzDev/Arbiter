@@ -185,8 +185,12 @@ GENERIC_TEST = re.compile(r"\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\bmake\s+(te
                           r"\bjust\s+test\b|\bgradle\w*\s+test\b|\bmvn\w*\s+test\b")
 
 
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
 def detect(command: str, output: str, exit_code: int | None = None) -> RunnerResult | None:
     """Recognize and parse a runner result. ``None`` means "not a recognized runner output"."""
+    output = ANSI.sub("", output)     # colored output (vitest, jest): "[32m16 passed" didn't parse
     fp = fingerprint(command)
     result: RunnerResult | None = None
     for p in PARSERS:

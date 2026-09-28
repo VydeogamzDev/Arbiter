@@ -116,3 +116,11 @@ def test_gate_does_not_block_when_no_test_covers_the_change():
         h.edit("pkg/covered.py", "def f():\n    return 2\n")    # covered, and now failing: still blocked
         h.drain()
         assert h.stop("Done: changed f.").get("decision") == "block"
+
+
+def test_colored_runner_output_parses():
+    from arbiter_agent.telemetry.runner_parsers.registry import detect
+
+    out = "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m16 passed\x1b[39m\x1b[22m\x1b[90m (16)\x1b[39m\n"
+    r = detect("npx vitest run src/addDays/test.ts", out, 0)
+    assert r is not None and r.passed == 16 and r.status == "pass"

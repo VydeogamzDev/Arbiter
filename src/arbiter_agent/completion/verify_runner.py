@@ -116,7 +116,8 @@ def run_one(cmd: VerifyCommand, root: str | Path, extra_env: dict[str, str] | No
     argv, use_shell = _argv(cmd)
     started = time.time()
     t0 = time.monotonic()
-    env = dict(os.environ, ARBITER_VERIFY="1", **(extra_env or {}))
+    # No color: runners' result lines parse as plain text (NO_COLOR, FORCE_COLOR=0 for vitest/jest/chalk).
+    env = dict(os.environ, ARBITER_VERIFY="1", NO_COLOR="1", FORCE_COLOR="0", **(extra_env or {}))
     timed_out = False
     try:
         proc = subprocess.run(argv, shell=use_shell, cwd=str(root), capture_output=True, text=True,
