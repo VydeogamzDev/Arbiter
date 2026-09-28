@@ -771,7 +771,8 @@ class SessionEngine:
                 _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
                 if ledger is not None and self._auto_test_at_stop(sid, ledger, deadline):
                     _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
-            if mode == "block" and ledger is not None and ledger.verdict != "verified" and self._untestable(sid, ledger):
+            if mode == "block" and ledger is not None and ledger.verdict != "verified" \
+                    and self._untestable(sid, ledger):
                 # Only test evidence is missing, and no test covers the changed files: blocking would send
                 # the agent off to find or run tests that don't exist (in a large repo, the whole suite).
                 mode = "annotate"
