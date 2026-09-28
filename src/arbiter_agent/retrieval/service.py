@@ -194,9 +194,9 @@ class RetrievalService:
             tester = AutoTester(self.config)
             cmd = tester.base_command(root)
             if cmd and tester.scope(root) == "related":
-                note = (f"Tests: after each code edit Arbiter runs the test files for the changed files "
-                        f"(`{cmd} <their test files>`) and adds the result to that edit's tool output. Make all "
-                        "the edits a change needs in one response: they run together and are tested once.")
+                note = (f"Tests: after each code edit Arbiter runs the tests related to the changed files (based "
+                        f"on `{cmd}`) and adds the result to that edit's tool output. Make all the edits a change "
+                        "needs in one response: they run together and are tested once.")
             elif cmd:
                 note = (f"Tests: Arbiter runs `{cmd}` after each code edit and adds the result to that edit's "
                         "tool output. Make all the edits a change needs in one response: they run together and "

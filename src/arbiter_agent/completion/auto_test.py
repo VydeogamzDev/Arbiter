@@ -74,6 +74,40 @@ def _pytest_configured(root: Path, names: set[str]) -> bool:
     return False
 
 
+JS_EXTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
+
+
+def _package_json(root: Path) -> dict[str, Any]:
+    try:
+        d = json.loads((root / "package.json").read_text("utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def runner_kind(root: Path, command: str | None) -> str | None:
+    """pytest | jest | vitest | node (another npm test runner) | go | cargo, from the test command and
+    package.json."""
+    if not command:
+        return None
+    if "pytest" in command:
+        return "pytest"
+    if command.startswith("go test"):
+        return "go"
+    if command.startswith("cargo"):
+        return "cargo"
+    if "npm test" in command or "jest" in command or "vitest" in command:
+        pkg = _package_json(root)
+        deps = {**(pkg.get("devDependencies") or {}), **(pkg.get("dependencies") or {})}
+        script = str((pkg.get("scripts") or {}).get("test") or "") + " " + command
+        if "vitest" in script or "vitest" in deps:
+            return "vitest"
+        if "jest" in script or "jest" in deps:
+            return "jest"
+        return "node"
+    return None
+
+
 def detect_command(root: Path) -> str | None:
     """The repo's plain test command, if it has an obvious one."""
     try:
@@ -104,7 +138,11 @@ def detect_command(root: Path) -> str | None:
 
 
 def is_test_file(name: str) -> bool:
-    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+    if name.endswith(".py"):
+        return name.startswith("test_") or name.endswith("_test.py")
+    if name.endswith("_test.go"):
+        return True
+    return name.endswith(JS_EXTS) and (".test." in name or ".spec." in name)
 
 
 def count_test_files(root: Path, stop_at: int = 1000) -> int:
@@ -130,17 +168,21 @@ def related_tests(root: Path, changed: list[str]) -> list[str]:
             rel = p.resolve().relative_to(rroot)
         except (ValueError, OSError):
             continue
-        if rel.suffix != ".py":
+        if rel.suffix != ".py" and not rel.name.endswith(JS_EXTS):
             continue
         found: list[Path] = []
         if is_test_file(rel.name):
             found.append(rel)
         else:
-            stem = rel.parent.name if rel.name == "__init__.py" else rel.stem
-            names = (f"test_{stem}.py", f"{stem}_test.py")
+            if rel.suffix == ".py":
+                stem = rel.parent.name if rel.name == "__init__.py" else rel.stem
+                names: tuple[str, ...] = (f"test_{stem}.py", f"{stem}_test.py")
+            else:                    # src/cart.ts -> cart.test.ts, cart.spec.ts, __tests__/cart.test.ts
+                stem = rel.name.split(".", 1)[0]
+                names = tuple(f"{stem}.{kind}{ext}" for kind in ("test", "spec") for ext in JS_EXTS)
             d = rel.parent
             while True:
-                for sub in ("tests", "test", ""):
+                for sub in ("tests", "test", "__tests__", ""):
                     for n in names:
                         cand = d / sub / n if sub else d / n
                         if (rroot / cand).is_file():
@@ -155,6 +197,20 @@ def related_tests(root: Path, changed: list[str]) -> list[str]:
         if len(out) >= MAX_RELATED:
             break
     return out[:MAX_RELATED]
+
+
+def _rel_paths(root: Path, changed: list[str]) -> list[str]:
+    rroot = root.resolve()
+    out: list[str] = []
+    for raw in changed:
+        try:
+            p = Path(raw) if Path(raw).is_absolute() else rroot / raw
+            rel = p.resolve().relative_to(rroot).as_posix()
+        except (ValueError, OSError):
+            continue
+        if rel not in out:
+            out.append(rel)
+    return out
 
 
 def is_code_path(path: str) -> bool:
@@ -239,9 +295,9 @@ class AutoTester:
             return want
         key = str(root)
         if key not in self._scope:
-            base = self.base_command(root) or ""
+            kind = runner_kind(root, self.base_command(root))
             many = count_test_files(root) > int(self.config.get("completion.auto_test_related_min_test_files", 40))
-            self._scope[key] = "related" if many and "pytest" in base else "full"
+            self._scope[key] = "related" if many and kind in ("pytest", "jest", "vitest", "node", "go") else "full"
         return self._scope[key]
 
     def base_command(self, root: Path) -> str | None:
@@ -252,10 +308,32 @@ class AutoTester:
         base = self.base_command(root)
         if not base or self.scope(root) != "related":
             return base
+        kind = runner_kind(root, base)
+        quote = lambda xs: " ".join(f'"{x}"' if " " in x else x for x in xs)  # noqa: E731
+        rels = _rel_paths(root, changed or [])
+        if kind in ("jest", "vitest"):
+            # The runner maps changed sources to the tests that import them (its own module graph).
+            src = [r for r in rels if r.endswith(JS_EXTS)][-MAX_RELATED:]
+            if not src:
+                return None
+            return (f"npx jest --findRelatedTests {quote(src)} --passWithNoTests" if kind == "jest"
+                    else f"npx vitest related --run {quote(src)} --passWithNoTests")
+        if kind == "go":
+            # A Go package is a directory: test the packages the session changed.
+            dirs: list[str] = []
+            for r in rels:
+                if r.endswith(".go"):
+                    d = r.rsplit("/", 1)[0] if "/" in r else ""
+                    arg = f"./{d}" if d else "."
+                    if arg not in dirs:
+                        dirs.append(arg)
+            return f"go test {' '.join(dirs[-MAX_RELATED:])}" if dirs else None
         tests = related_tests(root, changed or [])
         if not tests:
             return None                    # nothing known to cover the change: don't guess at the whole suite
-        return base + " " + " ".join(f'"{t}"' if " " in t else t for t in tests)
+        if kind == "node":
+            return f"{base} -- {quote(tests)}"
+        return base + " " + quote(tests)
 
     def warm(self, root: str | Path, *, wait: bool = False) -> None:
         """Compile a large repo's bytecode into Arbiter's cache once, in the background, so its first

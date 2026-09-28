@@ -77,7 +77,7 @@ def excerpt(path: str, text: str, query: str, line: int | None = None, classes: 
     functions. None when nothing matches (the caller falls back to the head). ``classes=False``
     (a file the conversation already holds): named methods only, not a named class's whole body."""
     if not path.endswith(".py"):
-        return None
+        return excerpt_braced(path, text, query, line, classes) if path.endswith(BRACED_EXTS) else None
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
@@ -133,6 +133,93 @@ def excerpt(path: str, text: str, query: str, line: int | None = None, classes: 
         out.append(f"# lines {start}-{end}\n{seg}")
         used += len(seg)
     return "\n\n".join(out)
+
+
+BRACED_EXTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".go", ".java", ".cs", ".kt", ".rs",
+               ".swift", ".php", ".scala", ".c", ".cc", ".cpp", ".h", ".hpp")
+_CONTAINER = re.compile(r"\b(class|interface|struct|enum|impl|trait|namespace)\b|^\s*type\s+\w+\s+(struct|interface)\b")
+
+
+def _decl_rx(name: str) -> re.Pattern[str]:
+    n = re.escape(name)
+    mods = r"(?:(?:export|default|declare|abstract|public|private|protected|internal|static|readonly|async|override|" \
+           r"final|open|virtual|get|set|pub(?:\([^)]*\))?|unsafe|extern)\s+)*"
+    return re.compile(
+        rf"^\s*{mods}(?:function\*?\s+{n}\b|class\s+{n}\b|interface\s+{n}\b|type\s+{n}\b|enum\s+{n}\b|struct\s+{n}\b|"
+        rf"trait\s+{n}\b|impl(?:<[^>]*>)?\s+(?:\w+\s+for\s+)?{n}\b|(?:const|let|var)\s+{n}\s*[=:]|fn\s+{n}\s*[<(]|"
+        rf"func\s+(?:\([^)]*\)\s*)?{n}\s*[\[(]|[\w<>\[\],.?\s]*?\b{n}\s*\([^;]*$)")
+
+
+def _braced_end(lines: list[str], start: int) -> int:
+    """Last line (0-based) of the brace block opened at or just after ``start``; the statement's end
+    when no brace opens within three lines."""
+    depth, opened = 0, False
+    for i in range(start, len(lines)):
+        code = re.sub(r"//.*$|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`[^`]*`", "", lines[i])
+        for ch in code:
+            if ch == "{":
+                depth += 1
+                opened = True
+            elif ch == "}":
+                depth -= 1
+        if opened and depth <= 0:
+            return i
+        if not opened and (i - start >= 2 or code.rstrip().endswith(";")):
+            return i
+    return len(lines) - 1
+
+
+def excerpt_braced(path: str, text: str, query: str, line: int | None = None, classes: bool = True) -> str | None:
+    """The brace-language counterpart of :func:`excerpt` (JS/TS, Go, Java, C#, Rust, ...): named
+    declarations found by pattern and cut at their matching brace. A big type is shown as an outline
+    of its member declarations with line numbers."""
+    lines = text.splitlines()
+    words = [w for w in dict.fromkeys(re.findall(r"[A-Za-z_$][\w$]{2,}", query)) if w.lower() not in STOPWORDS]
+    spans: list[tuple[int, int, bool]] = []
+    for w in words[:12]:
+        rx = _decl_rx(w)
+        for i, ln in enumerate(lines):
+            if rx.search(ln) and not re.match(r"^\s*(?:return|if|for|while|switch|catch|else)\b", ln):
+                container = bool(_CONTAINER.search(ln))
+                if container and not classes:
+                    continue
+                spans.append((i, _braced_end(lines, i), container))
+                break
+    if line is not None and 0 < line <= len(lines) and not any(a <= line - 1 <= b for a, b, _ in spans):
+        for i in range(line - 1, max(-1, line - 60), -1):                 # the declaration holding the best line
+            if DECL.match(lines[i]) and not _CONTAINER.search(lines[i]):
+                end = _braced_end(lines, i)
+                if end >= line - 1:
+                    spans.append((i, end, False))
+                break
+    if not spans:
+        return None
+    out: list[str] = []
+    used = 0
+    for a, b, container in sorted(set(spans)):
+        if any(a2 <= a and b <= b2 and (a2, b2) != (a, b) and not c2 for a2, b2, c2 in spans):
+            continue                                      # inside another chosen body already shown
+        seg = "\n".join(lines[a:b + 1])
+        if container and len(seg) > MAX_FILE_CHARS // 2:
+            members = [f"{lines[j].rstrip()}    // line {j + 1}" for j in range(a + 1, b)
+                       if DECL.match(lines[j]) or re.match(r"^\s+(?:(?:public|private|protected|static|async|get|set|"
+                                                           r"readonly|override)\s+)*[A-Za-z_$][\w$]*\s*\(.*\)\s*[:{]",
+                                                           lines[j])]
+            seg = "\n".join([lines[a].rstrip()] + members[:OUTLINE_LINES])
+            out.append(f"// outline, lines {a + 1}-{b + 1}\n{seg}")
+            used += len(seg)
+            continue
+        if used + len(seg) > MAX_FILE_CHARS:
+            if not out:
+                out.append(seg[:MAX_FILE_CHARS] + "\n... (cut)")
+            break
+        out.append(f"// lines {a + 1}-{b + 1}\n{seg}")
+        used += len(seg)
+    return "\n\n".join(out) or None
+
+
+STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "when", "into", "should", "add", "make", "fix",
+             "new", "return", "returns", "value", "values", "function", "method", "class", "file", "test", "tests"}
 
 
 def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],

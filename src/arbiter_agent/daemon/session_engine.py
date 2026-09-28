@@ -771,6 +771,10 @@ class SessionEngine:
                 _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
                 if ledger is not None and self._auto_test_at_stop(sid, ledger, deadline):
                     _, ledger = self.evaluate(sid, integrity_budget_s=max(0.05, deadline.remaining() * 0.3))
+            if mode == "block" and ledger is not None and ledger.verdict != "verified" and self._untestable(sid, ledger):
+                # Only test evidence is missing, and no test covers the changed files: blocking would send
+                # the agent off to find or run tests that don't exist (in a large repo, the whole suite).
+                mode = "annotate"
             out = gate.decide(mode=mode, claim=claim, ledger=ledger, stop_blocks_used=int(st["stop_blocks"]),
                               max_blocks=max_blocks, unavailable_reason=breaker)
             self.record_ledger(sid, ledger, trigger="stop_hook", claim=claim.claim, verdict=out.verdict, mode=mode,
@@ -1175,6 +1179,22 @@ class SessionEngine:
             return False
         self._record_auto_test(sid, out)
         return True
+
+    def _untestable(self, sid: str, ledger: Any) -> bool:
+        """Every missing item is test evidence, and Arbiter's targeted runs know no test for the files
+        this session changed (a related-scope repo whose changed files have no test files)."""
+        missing = [str(m) for m in (ledger.missing or [])]
+        if not missing or not all("test run" in m or "tests" in m for m in missing):
+            return False
+        root = self._repo_root(sid)
+        changed = self._changed.get(sid)
+        if not root or not changed or self.auto_tester.mode() == "off":
+            return False
+        try:
+            return self.auto_tester.scope(Path(root)) == "related" and \
+                self.auto_tester.command(Path(root), changed) is None
+        except Exception:
+            return False
 
     def _record_auto_test(self, sid: str, out: Any) -> None:
         fact = vr.result_fact(out.result)
