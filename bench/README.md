@@ -275,3 +275,46 @@ By prompt position: first prompt -25%, second -32%, third -35%. Every task was c
 (digital_root not in sympy.ntheory.__all__); both full failures are the same ambiguous requirement
 (ordinal(-25, words=True): the prompt says negatives get "minus ", the hidden test expects the
 numeric fallback "-25th" beyond the word table), which all three baseline runs read the other way.
+
+## Seven follow-ups (2026-09-27): what each one bought
+
+1-3 on sympy (Pi gpt-6-luna, `realrepo_v1`, 3 reps; baseline reused from the previous run; 13 paired
+sessions, two excluded, below):
+
+| | cost vs baseline | 95% CI | requests | edits (batched) | searches | passed |
+|---|---|---|---|---|---|---|
+| full, before | -28% | -39% to -16% | 176 | 84 (0) | 23 | 12/13 |
+| full, items 1-3 | -31% | -40% to -15% | 167 | 74 (0) | 17 | 12/13 |
+| full + Pi edit tools (2) | -22% | -32% to -8% | 175 | 80 (2) | 18 | 11/13 |
+
+- 1 (batching guideline): no effect. gpt-6-luna made 0 of 74 edits in a batch.
+- 2 (insert_code / replace_def, opt-in): used 15 times, output rose, and the only two sessions of
+  ~200 Pi runs that ever hung were in this condition: the model's first bash call degenerated into
+  an endless `} } }` / `* * *` stream (25-minute timeouts, excluded above). Harmful: stays off.
+- 3 (follow-up packs, class outlines, export files, module pins): fewer searches (23 -> 17) and
+  requests; within noise overall.
+
+4, Claude Code on sympy (Opus 5.5, 1 rep, no slim, $9.17 total): baseline $4.49, full $4.67 (+4%).
+Calls -13%, agent test runs 17 -> 6, cached reads -5%, output -5%, but cache writes +16%: everything
+Arbiter injects is new content, and Claude caches it at 2x input. Codex on sympy was not run: its
+3-prompt sessions need a benchmark-only Codex sign-in (the one-shot mode can't resume, and resuming
+writes into the real ~/.codex).
+
+5-6: targeted jest/vitest/Go test runs and brace-language excerpts; the gate stops blocking when no
+test covers the change (measured: the gate costs 20-80 ms per claim once a result exists).
+
+7, a repo Arbiter was never tuned on: date-fns 4.1.0 (TypeScript, vitest, 1,727 files;
+`realrepo_js_v1`, tasks committed before any run), Pi gpt-6-luna, 3 reps, 30 sessions:
+
+| | baseline | full | change |
+|---|---|---|---|
+| cost index | 817k | 567k | **-31%** (95% CI -42% to -20%) |
+| input tokens | 2.19M | 1.16M | -47% |
+| tool calls | 299 | 215 | -28% |
+| sessions passing all hidden tests | 15/15 | 13/15 | |
+
+By prompt: first -37%, second -24%, third -27%. Arbiter's vitest runs reached the agent 59 times.
+Failures (both full): a wrong rounding formula in a new function with no test file; and a syntax
+error Arbiter should have caught: 14 quick edits pushed the broken file's test out of the 6-file
+related run, and a test file that fails to load was parsed as UNKNOWN. Both fixed after the run
+(41b617b), not re-measured.
