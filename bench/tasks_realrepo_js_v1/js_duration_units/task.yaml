@@ -1,0 +1,22 @@
+id: js_duration_units
+category: multi_turn
+prompts:
+- 'Add a `maxUnits` option to `formatDuration`: only the N largest units that would appear in the output are written
+  (default: no limit).'
+- Also add a `lastDelimiter` option to formatDuration, used between the last two units instead of `delimiter` (so
+  you can get "2 years, 9 months and 3 days").
+- 'And a `zeroText` option: what to return when nothing would be written (default: the empty string, as now).'
+requirements:
+  max_units: max_units
+  max_units_zero: max_units_zero
+  last_delimiter: last_delimiter
+  single_unit: single_unit
+  zero_text: zero_text
+  default_unchanged: default_unchanged
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: date-fns 4.1.0 (1,727 files, TypeScript, vitest); written before any Arbiter run on it

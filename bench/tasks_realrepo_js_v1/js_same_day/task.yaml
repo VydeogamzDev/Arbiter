@@ -1,0 +1,20 @@
+id: js_same_day
+category: multi_turn
+prompts:
+- 'Give `nextDay` an `includeSameDay` option: when the date already falls on the requested weekday, return that
+  date instead of the one a week later.'
+- Do the same for `previousDay`.
+- The weekday helpers (nextMonday ... nextSunday and previousMonday ... previousSunday) should accept `includeSameDay`
+  too.
+requirements:
+  next_same: next_same
+  next_default: next_default
+  previous_same: previous_same
+  helpers: helpers
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: date-fns 4.1.0 (1,727 files, TypeScript, vitest); written before any Arbiter run on it

@@ -49,7 +49,8 @@ BENCH = Path(__file__).resolve().parent
 TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arbiter)
 SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/quality: never tune on these
           "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1",
-          "realrepo_v1": BENCH / "tasks_realrepo_v1"}     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
+          "realrepo_v1": BENCH / "tasks_realrepo_v1",     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
+          "realrepo_js_v1": BENCH / "tasks_realrepo_js_v1"}   # date-fns 4.1.0, written before any run on it
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -124,8 +125,14 @@ def with_task_path(task: dict[str, Any], env: dict[str, str]) -> dict[str, str]:
 
 
 def prepare_workspace(task: dict[str, Any], ws: Path) -> None:
-    shutil.copytree(repo_dir(task), ws, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
-    (ws / ".gitignore").write_text("__pycache__/\n.pytest_cache/\n*.pyc\n", encoding="utf-8")
+    shutil.copytree(repo_dir(task), ws, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache",
+                                                                     "node_modules"))
+    # Append, don't replace: a repo's own .gitignore (date-fns: node_modules) must keep working.
+    gi = ws / ".gitignore"
+    old = gi.read_text("utf-8", errors="replace") if gi.is_file() else ""
+    gi.write_text(old + ("" if old.endswith("\n") or not old else "\n") + "__pycache__/\n.pytest_cache/\n*.pyc\n"
+                  + ("node_modules\n" if task.get("link") else ""), encoding="utf-8")
+    scoring.link_all(task, ws)
     git(ws, "init", "-q", "-b", "main")
     git(ws, "add", "-A")
     git(ws, "commit", "-q", "-m", "initial")

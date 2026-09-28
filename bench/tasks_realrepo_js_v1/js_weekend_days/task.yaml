@@ -1,0 +1,21 @@
+id: js_weekend_days
+category: multi_turn
+prompts:
+- 'Let `isWeekend` take a `weekendDays` option: the days of the week that count as the weekend (0 = Sunday ... 6
+  = Saturday). The default stays Saturday and Sunday; this is so Friday-Saturday weekends can be used.'
+- '`eachWeekendOfInterval` should honor the same `weekendDays` option.'
+- 'And `differenceInBusinessDays` too: days listed in `weekendDays` are not business days.'
+requirements:
+  weekend_default: weekend_default
+  weekend_option: weekend_option
+  each_weekend_option: each_weekend_option
+  each_weekend_default: each_weekend_default
+  business_days_option: business_days_option
+  business_days_default: business_days_default
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: date-fns 4.1.0 (1,727 files, TypeScript, vitest); written before any Arbiter run on it

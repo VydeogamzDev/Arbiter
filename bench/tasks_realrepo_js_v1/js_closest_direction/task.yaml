@@ -1,0 +1,20 @@
+id: js_closest_direction
+category: multi_turn
+prompts:
+- 'Give `closestIndexTo` an options argument with a `direction` option: ''any'' (the default), ''before'' or ''after''.
+  With ''before'' only dates at or before the given date count; with ''after'', only dates at or after it.'
+- '`closestTo` should accept the same `direction` option.'
+- When no date qualifies for the direction, both should return undefined.
+requirements:
+  index_default: index_default
+  index_before: index_before
+  index_after: index_after
+  closest_direction: closest_direction
+  none_qualifies: none_qualifies
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: date-fns 4.1.0 (1,727 files, TypeScript, vitest); written before any Arbiter run on it

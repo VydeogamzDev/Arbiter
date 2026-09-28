@@ -43,7 +43,7 @@ markers = [
 line-length = 120
 target-version = "py311"
 src = ["src", "tests", "."]
-extend-exclude = ["src/arbiter_agent/eval/corpus", "bench/tasks", "bench/tasks_heldout_v1", "bench/tasks_quality_v1", "bench/tasks_realrepo_v1",
+extend-exclude = ["src/arbiter_agent/eval/corpus", "bench/tasks", "bench/tasks_heldout_v1", "bench/tasks_quality_v1", "bench/tasks_realrepo_v1", "bench/tasks_realrepo_js_v1",
                   "bench/tasks_largerepo_v1"]   # fixture repos are data, not Arbiter code
 
 [tool.ruff.lint]

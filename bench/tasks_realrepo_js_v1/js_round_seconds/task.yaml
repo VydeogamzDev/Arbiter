@@ -1,0 +1,24 @@
+id: js_round_seconds
+category: multi_turn
+prompts:
+- Add `roundToNearestSeconds(date, options)` next to `roundToNearestMinutes`, with the same `nearestTo` and `roundingMethod`
+  options (it rounds to seconds; milliseconds are what gets rounded away). Export it from the package index like
+  the other functions.
+- roundToNearestSeconds should return an Invalid Date when `nearestTo` is below 1 or above 30, the way roundToNearestMinutes
+  does.
+- 'Change of plan: for roundToNearestSeconds, allow any `nearestTo` from 1 to 59. roundToNearestMinutes keeps its
+  1-30 limit.'
+requirements:
+  rounds: rounds
+  rounding_method: rounding_method
+  nearest_to: nearest_to
+  invalid_range: invalid_range
+  wide_range: wide_range
+  minutes_unchanged: minutes_unchanged
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: date-fns 4.1.0 (1,727 files, TypeScript, vitest); written before any Arbiter run on it
