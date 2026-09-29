@@ -1,0 +1,14 @@
+id: hd_interval_duration
+category: debug
+prompts:
+- '`intervalToDuration` gets the days wrong for intervals that span more than a year and some months (Jan 10 2020
+  to Apr 15 2023 should be 3 years, 3 months, 5 days). Fix it.'
+requirements:
+  years_months_days: years_months_days
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

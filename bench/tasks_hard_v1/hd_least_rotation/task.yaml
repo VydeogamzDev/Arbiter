@@ -1,0 +1,12 @@
+id: hd_least_rotation
+category: debug
+prompts:
+- '`least_rotation` in sympy.utilities.iterables sometimes returns an index whose rotation is not the lexicographically
+  smallest one (random short lists of 0, 1 and 2 show it). Fix it.'
+requirements:
+  least_rotation_minimal: test_least_rotation_minimal
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

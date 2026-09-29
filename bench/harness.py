@@ -52,7 +52,8 @@ TASKS = BENCH / "tasks"                       # dev suite (used while tuning Arb
 SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/quality: never tune on these
           "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1",
           "realrepo_v1": BENCH / "tasks_realrepo_v1",     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
-          "realrepo_js_v1": BENCH / "tasks_realrepo_js_v1"}   # date-fns 4.1.0, written before any run on it
+          "realrepo_js_v1": BENCH / "tasks_realrepo_js_v1",   # date-fns 4.1.0, written before any run on it
+          "hard_v1": BENCH / "tasks_hard_v1"}                 # planted bugs + a fast-algorithm feature (luna-first routing)
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -135,6 +136,7 @@ def prepare_workspace(task: dict[str, Any], ws: Path) -> None:
     gi.write_text(old + ("" if old.endswith("\n") or not old else "\n") + "__pycache__/\n.pytest_cache/\n*.pyc\n"
                   + ("node_modules\n" if task.get("link") else ""), encoding="utf-8")
     scoring.link_all(task, ws)
+    overlay(task["dir"] / "setup", ws)        # a task's starting changes (a planted bug), part of the base commit
     git(ws, "init", "-q", "-b", "main")
     git(ws, "add", "-A")
     git(ws, "commit", "-q", "-m", "initial")

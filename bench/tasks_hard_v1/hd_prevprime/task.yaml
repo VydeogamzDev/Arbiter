@@ -1,0 +1,12 @@
+id: hd_prevprime
+category: debug
+prompts:
+- '`prevprime(n)` (sympy.ntheory) sometimes skips a prime: for some n above a million it returns a prime smaller
+  than the largest prime below n. Find the cause, fix it, and add a regression test.'
+requirements:
+  prevprime_correct: test_prevprime_correct
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: False'

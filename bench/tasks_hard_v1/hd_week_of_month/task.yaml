@@ -1,0 +1,14 @@
+id: hd_week_of_month
+category: debug
+prompts:
+- '`getWeekOfMonth` returns 2 for the first day of some months when `weekStartsOn` is set (it should always be week
+  1 for the 1st). Fix it.'
+requirements:
+  first_is_week_one: first_is_week_one
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

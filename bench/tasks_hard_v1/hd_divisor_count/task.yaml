@@ -1,0 +1,12 @@
+id: hd_divisor_count
+category: debug
+prompts:
+- '`divisor_count(n, modulus)` (sympy.ntheory) gives wrong counts for some n and moduli: it should count the divisors
+  of n that are divisible by modulus. Fix it.'
+requirements:
+  divisor_count_modulus: test_divisor_count_modulus
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

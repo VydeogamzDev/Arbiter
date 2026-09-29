@@ -1,0 +1,12 @@
+id: hd_binary_partitions
+category: debug
+prompts:
+- '`binary_partitions(n)` in sympy.utilities.iterables yields wrong partitions for some n (they don''t all sum to
+  n, or some are missing). Fix it.'
+requirements:
+  binary_partitions_all: test_binary_partitions_all
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

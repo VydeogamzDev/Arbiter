@@ -1,0 +1,12 @@
+id: hd_sqrt_mod
+category: debug
+prompts:
+- '`sqrt_mod(a, p)` (sympy.ntheory) returns wrong square roots for some primes p that are 1 mod 8, p = 73 for example.
+  Fix it.'
+requirements:
+  sqrt_mod_roots: test_sqrt_mod_roots
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: True'

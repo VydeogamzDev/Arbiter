@@ -1,0 +1,15 @@
+id: hf_distinct_partitions
+category: feature
+prompts:
+- 'Add `distinct_partitions(n)` to sympy.ntheory (importable as `from sympy.ntheory import distinct_partitions`):
+  the number of partitions of n into distinct parts (OEIS A000009; distinct_partitions(0) == 1, distinct_partitions(7)
+  == 5). It has to be fast: n = 20000 must take well under a second.'
+requirements:
+  small_values: test_small_values
+  fast_large: test_fast_large
+  bad_input: test_bad_input
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 'hard_v1; planted bug caught by the repo''s own tests: None'
