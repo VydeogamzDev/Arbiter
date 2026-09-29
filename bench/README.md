@@ -340,3 +340,12 @@ Ponytail-style write-less note (120 paid Pi/Codex sessions on sympy and date-fns
 lookups went away but requests didn't (Pi sympy 202 -> 199), and the bigger pack cost more. Every
 cell was equal or worse than the plain pack (Pi date-fns -31% -> -24%, Codex date-fns -20% -> -11%).
 Reverted.
+
+### Correction (2026-09-28): Codex multi-prompt costs
+
+`codex exec resume` reports the thread's cumulative usage, and the harness summed it per turn, so
+prompt 1 was counted three times in 3-prompt sessions (fixed in `run_codex`; `thread_usage` keeps
+the raw figure). Recomputed from the last turn's cumulative usage, full vs baseline: sympy **-11%**
+(95% CI -20% to -3%; not -12%), date-fns **-17%** (-28% to -5%; not -20%). By prompt: sympy -16% /
+-3% / -9%, date-fns -27% / -8% / -4%. Arbiter's Codex savings are almost all in the first prompt.
+Pi and one-prompt Codex runs were not affected.

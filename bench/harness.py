@@ -395,8 +395,13 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
                 elif item.get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
                     tools += 1
         messages.append(last)
+        # `codex exec resume` reports the thread's cumulative usage, not the turn's: summing turns counted
+        # prompt 1 three times in a 3-prompt session (found 2026-09-28; codex runs before this doubled).
+        thread_usage = dict(usage)
+        if turns and all(usage[k] >= turns[-1]["thread_usage"][k] for k in usage):
+            usage = {k: usage[k] - turns[-1]["thread_usage"][k] for k in usage}
         turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:],
-                      "usage": usage, "tools": tools, "errors": errors})
+                      "usage": usage, "thread_usage": thread_usage, "tools": tools, "errors": errors})
         if code is None or not thread:
             break
     tot = {k: sum(t["usage"][k] for t in turns) for k in turns[0]["usage"]}
