@@ -375,3 +375,23 @@ The target's own test file in the pack (`full_tests`) and a 6,000-token pack wit
 (`full_big`): Codex sympy -12% (control) / -10% / -5%, date-fns -9% / -6% / -13%, all 14-15/15 passed,
 all within noise. Contents matter (map-only lost 9-16 points), but more than the 2,500-token pack
 doesn't pay. Code reverted.
+
+## Model and effort: the lever (2026-09-29)
+
+Codex + Arbiter (`full`), 3 reps, 15 sessions per cell, priced at API rates per 1M tokens (Astra
+$10/$1/$50, Sol $2/$0.20/$10, Luna $0.10/$0.01/$0.50 input/cached/output):
+
+| model / effort | date-fns $/session | passed | sympy $/session | passed |
+|---|---|---|---|---|
+| gpt-6-sol / high | 0.347 | 15/15 | 0.231 | 12/15 |
+| gpt-6-sol / medium | 0.315 | 14/15 | 0.202 | 11/14 |
+| gpt-6-sol / low | 0.164 | 13/15 | 0.140 | 12/15 |
+| sol/high main, luna sub-agents (`full_delegate`) | 0.260 | 13/15 | 0.214 | 10/15 |
+| gpt-6-luna / medium | 0.005 | 15/15 | 0.005 | 15/15 |
+
+On these tasks luna is 47-70x cheaper than sol/high and passes at least as often (sympy's sol
+failures are the ambiguous negative-ordinal requirement). Sol/high also works much harder: 3-5x the
+tool calls. Low effort halves sol's cost. Delegating implementation to luna sub-agents (via an
+AGENTS.md request) saves 7-25% and loses pass rate: the sol main agent still reviews at length.
+Codex hooks can't change the model or effort of a turn (tested: model fields in UserPromptSubmit
+output are ignored); Pi extensions can (`pi.setModel`, `pi.setThinkingLevel`).
