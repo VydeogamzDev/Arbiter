@@ -27,6 +27,11 @@ WORDING = ("[Arbiter] Task context, read from disk at this prompt. Files shown i
            "edit them directly, and re-read one only after it changes.")
 FOLLOWUP_WORDING = ("[Arbiter] More task context for this prompt: files not yet shown in this conversation, read "
                     "from disk now (complete and current unless marked).")
+# Opt-in (retrieval.auto_context_lean_note), after Ponytail's minimalism rules (JetBrains measured
+# -10% cost with them on Claude Code, 2026-07): output is 28-40% of what's left after the pack.
+LEAN_NOTE = ("Keep the change small: write only what the request needs, reuse what the codebase already has, "
+             "match the surrounding code's style and docstring length, add only the tests that check the "
+             "requested behavior, and end with a one- or two-sentence reply.")
 MAP_ALL_MAX = 80          # list every path up to this many files
 MAX_FILE_CHARS = 6000     # one file's share before it's cut
 OUTLINE_LINES = 40        # an outline's share
@@ -221,6 +226,167 @@ def excerpt_braced(path: str, text: str, query: str, line: int | None = None, cl
 STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "when", "into", "should", "add", "make", "fix",
              "new", "return", "returns", "value", "values", "function", "method", "class", "file", "test", "tests"}
 
+TEST_HEADER_LINES = 25
+_JS_TEST = re.compile(r"^\s*(?:describe|it|test)(?:\.\w+)*\s*\(")
+
+
+def test_excerpt(path: str, text: str, query: str) -> str | None:
+    """A large test file as an agent adding a test needs it: the imports, the tests whose names or
+    bodies mention what the prompt names, and the last test with the line the file ends at. Replay
+    of the real-repo runs (2026-09-28): 23 of 35 test-file reads were of the target's test file,
+    mostly to copy its conventions and find where to append; the file's head, cut at 6,000
+    characters, showed neither."""
+    lines = text.splitlines()
+    names = {w for w in re.findall(r"[A-Za-z_$][\w$]{2,}", query) if w.lower() not in STOPWORDS}
+    lowered = {w.lower() for w in names}
+    spans: list[tuple[int, int]] = []                     # 0-based inclusive
+    if path.endswith(".py"):
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            return None
+        defs = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+        if not defs:
+            return None
+        first = min([defs[0].lineno] + [d.lineno for d in getattr(defs[0], "decorator_list", [])]) - 1
+        for n in defs:
+            a = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])]) - 1
+            b = (getattr(n, "end_lineno", n.lineno) or n.lineno) - 1
+            body = "\n".join(lines[a:b + 1])
+            if any(w in n.name.lower() for w in lowered if len(w) > 3) or any(
+                    re.search(rf"(?<![\w$]){re.escape(w)}(?![\w$])", body) for w in names if "_" in w or
+                    any(c.isupper() for c in w[1:])):
+                spans.append((a, b))
+        last = defs[-1]
+        last_span = (min([last.lineno] + [d.lineno for d in getattr(last, "decorator_list", [])]) - 1,
+                     (getattr(last, "end_lineno", last.lineno) or last.lineno) - 1)
+    else:
+        starts = [i for i, ln in enumerate(lines) if _JS_TEST.match(ln)]
+        if not starts:
+            return None
+        first = starts[0]
+        blocks = [(i, _braced_end(lines, i)) for i in starts if not re.match(r"^\s*describe", lines[i])]
+        if not blocks:
+            return None
+        for a, b in blocks:
+            if any(w in lines[a].lower() for w in lowered if len(w) > 3):
+                spans.append((a, b))
+        last_span = blocks[-1]
+    head = [ln for ln in lines[:first]]
+    while head and not head[-1].strip():
+        head.pop()
+    out = []
+    if head:
+        cut = head[:TEST_HEADER_LINES]
+        more = f"\n... (header continues to line {len(head)})" if len(head) > TEST_HEADER_LINES else ""
+        out.append(f"# lines 1-{len(cut)}\n" + "\n".join(cut) + more)
+    used = sum(len(x) for x in out)
+    last_seg = "\n".join(lines[last_span[0]:last_span[1] + 1])
+    if len(last_seg) > MAX_FILE_CHARS // 4:
+        last_seg = lines[last_span[0]] + "\n    ..."
+    budget = MAX_FILE_CHARS // 2 - used - len(last_seg)       # conventions and the end, not the whole file
+    for a, b in sorted(set(spans)):
+        if (a, b) == last_span:
+            continue
+        seg = "\n".join(lines[a:b + 1])
+        if len(seg) > budget:
+            break
+        out.append(f"# lines {a + 1}-{b + 1}\n{seg}")
+        budget -= len(seg)
+    out.append(f"# the last test, lines {last_span[0] + 1}-{last_span[1] + 1}; the file ends at line {len(lines)}\n"
+               f"{last_seg}")
+    return "\n\n".join(out)
+
+
+USAGE_FILES = 10
+
+
+def usage_block(entries: list[dict[str, Any]], max_chars: int = 3000) -> str | None:
+    """Where the prompt's named code appears, from the index: every file that mentions each name
+    and the lines, a snippet for files the pack doesn't show, and the definition's folder when
+    it's small. Replay (2026-09-28): searches for names the prompt mentions (``rg closestIndexTo
+    src test``, ``ls src/closestIndexTo``) were 4-10% of all cost. A name that doesn't fit
+    ``max_chars`` is left out whole (a cut list would read as complete)."""
+    out: list[str] = []
+    for e in entries:
+        part = _usage_lines(e)
+        if sum(len(x) + 1 for x in out + part) <= max_chars:
+            out += part
+    if not out:
+        return None
+    return ("--- where the named code appears (Arbiter's index: every file that mentions each name, as "
+            "of this prompt) ---\n" + "\n".join(out) + "\n")
+
+
+def _usage_lines(e: dict[str, Any]) -> list[str]:
+    name = e["name"]
+    if not e["files"]:
+        return [f"`{name}`: no file in the repository mentions it."]
+    defs = ", ".join(f"{d['path']}:{d['line']}" for d in e["definitions"][:3])
+    out = [f"`{name}`" + (f", defined at {defs}" if defs else "") + ", appears in:"]
+    for f in e["files"][:USAGE_FILES]:
+        ls = f["lines"]
+        nums = ", ".join(map(str, ls[:10])) + (f", ... ({len(ls)} lines)" if len(ls) > 10 else "")
+        snip = f"    {f['snippet']}" if f.get("snippet") else ""
+        out.append(f"  {f['path']}: {nums}{snip}")
+    rest = e["files"][USAGE_FILES:]
+    if rest:
+        dirs = Counter(r["path"].rsplit("/", 1)[0] for r in rest)
+        out.append(f"  and {len(rest)} more: " + ", ".join(f"{d}/ ({n})" for d, n in dirs.most_common(6)))
+    if e.get("other"):
+        out.append(f"  also in {len(e['other'])} non-code file(s): {', '.join(e['other'][:6])}")
+    if e.get("folder"):
+        out.append(f"  {e['folder'][0]}/ contains: {', '.join(e['folder'][1])}")
+    return out
+
+
+def edit_region(rel: str, text: str, new_blocks: list[str], context: int = 3) -> str | None:
+    """The part of a file an edit just changed, with line numbers and a few lines around it. Edit
+    tools answer "Successfully replaced 1 block(s)", so agents re-read the file to see where things
+    now sit before the next edit: Pi re-read sympy's partitions.py five times in one session
+    (replay, 2026-09-28: re-reading own edits was 2-6% of cost)."""
+    lines = text.splitlines()
+    if not lines:
+        return None
+    bare = [ln.rstrip() for ln in lines]
+    spans: list[tuple[int, int]] = []
+    for blk in new_blocks:
+        want = [ln.rstrip() for ln in blk.splitlines()]
+        while want and not want[-1]:
+            want.pop()
+        while want and not want[0]:
+            want.pop(0)
+        if not want:
+            continue
+        for i in range(len(bare) - len(want) + 1):
+            if bare[i] == want[0] and bare[i:i + len(want)] == want:
+                spans.append((i, i + len(want) - 1))
+                break
+    if not spans:
+        return None
+    width = len(str(len(lines)))
+    out: list[str] = []
+    shown_to = -1
+    for a, b in sorted(spans)[:3]:
+        lo, hi = max(0, a - context), min(len(lines) - 1, b + context)
+        if lo <= shown_to:
+            lo = shown_to + 1
+        if lo > hi:
+            continue
+        if out:
+            out.append("...")
+        idx = list(range(lo, hi + 1))
+        if b - a + 1 > 12:           # a long new block: the agent just wrote it; its ends locate it
+            idx = [i for i in idx if i < a + 3 or i > b - 3]
+        prev = None
+        for i in idx:
+            if prev is not None and i != prev + 1:
+                out.append(f"{'':>{width}}  ... (lines {prev + 2}-{i} as written)")
+            out.append(f"{i + 1:>{width}}| {lines[i]}")
+            prev = i
+        shown_to = hi
+    return f"[Arbiter] {rel} after this edit ({len(lines)} lines):\n" + "\n".join(out)
+
 
 def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],
          tests_of: Callable[[str], list[str]], files: set[str]) -> set[str]:
@@ -244,10 +410,14 @@ def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_
     strong = [p for p in pins if not p.endswith("__init__.py")]     # a package init is where, not what
     head = list(dict.fromkeys(pins + ([] if strong else ranked[:3])))
     out = list(head)
+    # Tests before imports: the target's test file was read in 9 of 10 real-repo task types (to copy
+    # its conventions and append a test), and was often cut from the pack by the limit (2026-09-28).
+    for p in head[:2]:
+        out += tests_of(p)[:1]
     for p in head[:3]:
         out += sorted(d for d in deps.get(p, set()) if d in files)
     for p in head[:2]:
-        out += tests_of(p)
+        out += tests_of(p)[1:]
     if not strong:
         out += ranked[3:5]
     seen: list[str] = []
@@ -263,7 +433,8 @@ MAP_WORDING = "[Arbiter] Task context at this prompt (snapshot):"
 def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], str | None],
           max_tokens: int, contents: bool = True, test_note: str | None = None,
           full: set[str] | None = None, query: str = "", hit_lines: dict[str, int] | None = None,
-          skip: set[str] | None = None, shown_keys: list[str] | None = None) -> str | None:
+          skip: set[str] | None = None, shown_keys: list[str] | None = None,
+          extra: list[str] | None = None, note: str | None = None) -> str | None:
     """``contents=False`` gives the map-only pack: the repo map and the ranked likely-relevant files,
     without file contents (models that re-read files before editing gain nothing from contents).
 
@@ -278,7 +449,10 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
     (excerpts already shown) for a follow-up prompt of the same session.
     Those are left out, and so are the repo map and test note; with nothing new there's no pack. On
     sympy, every follow-up prompt re-sent a ~1.7k-token pack of files already in context, which then
-    rode along in every later request (2026-09-27). ``shown_keys`` receives the keys of the blocks shown."""
+    rode along in every later request (2026-09-27). ``shown_keys`` receives the keys of the blocks shown.
+
+    ``extra``: blocks placed before the files (where the named code appears), deduplicated through
+    ``skip``/``shown_keys`` like files; ``note``: a line added to a first prompt's header."""
     if not contents:
         if not picks:
             return None
@@ -292,9 +466,19 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
     if skip:
         lines = [FOLLOWUP_WORDING]
     else:
-        lines = [WORDING, f"Repo files: {repo_map(files, picks)}"] + ([test_note] if test_note else [])
+        lines = [WORDING, f"Repo files: {repo_map(files, picks)}"] + ([test_note] if test_note else []) \
+            + ([note] if note else [])
     used = sum(len(x) + 1 for x in lines)
     shown: list[str] = []
+    for block in extra or []:
+        key = block_key("@extra", block)
+        if key in skip or len(block) > budget // 3 or used + len(block) > budget:
+            continue
+        lines.append(block)
+        shown.append("@extra")
+        if shown_keys is not None:
+            shown_keys.append(key)
+        used += len(block) + 1
     for p in picks:
         text = read(p)
         if text is None or not text.strip():
@@ -304,6 +488,10 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
             if not body.strip():
                 continue
             block = f"--- {p} (outline: signatures only; read the file for the body) ---\n{body.rstrip()}\n"
+        elif len(text) > MAX_FILE_CHARS and _is_test(p) and (ex := test_excerpt(p, text, query)):
+            n = text.count("\n") + 1
+            block = (f"--- {p} (excerpt of a {n}-line test file: its imports, the tests that mention what the "
+                     f"prompt names, and its last test) ---\n{ex.rstrip()}\n")
         elif len(text) > MAX_FILE_CHARS and (ex := excerpt(p, text, query, (hit_lines or {}).get(p),
                                                                   classes=p not in (skip or ()))):
             # An excerpt is judged by its content below: another function of a big file is new.
@@ -317,9 +505,7 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
         if key in skip or (p in skip and "(excerpt of a" not in block):
             continue                     # already in the conversation (shown, read or edited)
         if used + len(block) > budget:
-            if not shown:
-                continue
-            break
+            continue                     # a smaller later pick may fit (a test file after a big excerpt)
         lines.append(block)
         shown.append(p)
         if shown_keys is not None:
@@ -328,6 +514,12 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
     if not shown:
         return None
     return "\n".join(lines)
+
+
+def _is_test(path: str) -> bool:
+    from arbiter_agent.completion.auto_test import is_test_file
+
+    return is_test_file(path.rsplit("/", 1)[-1])
 
 
 def block_key(path: str, block: str) -> str:

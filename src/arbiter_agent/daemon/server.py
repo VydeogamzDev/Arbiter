@@ -177,6 +177,7 @@ class Daemon:
             self.engine.context_provider = lambda cwd, ctx, budget: retrieval.context(cwd, ctx, budget)
             self.engine.pack_provider = lambda cwd, ctx, budget, tokens: retrieval.context_pack(cwd, ctx, budget,
                                                                                           tokens)
+            self.engine.region_provider = lambda root, tin, paths: retrieval.edit_region(root, tin, paths)
         if self.flags.enabled("host_api") and self.config.get("hosts.enabled", True):
             from arbiter_agent.host.api import HostAPI
 

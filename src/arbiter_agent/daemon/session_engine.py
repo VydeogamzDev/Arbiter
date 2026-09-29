@@ -71,7 +71,8 @@ def _working_changes(root: str, base: str | None) -> list[Any] | None:
     def git(*args: str) -> str | None:
         try:
             r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=10,
-                               encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace",
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.SubprocessError):
             return None
         return r.stdout if r.returncode == 0 else None
@@ -114,6 +115,8 @@ class SessionEngine:
         self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
         self.pack_provider: Callable[[str, dict[str, Any], float, int], dict[str, Any]] | None = None
         self._late_packs: dict[str, tuple[Any, str, float]] = {}   # sid -> (future, query, started)
+        # (repo root, tool input, edited paths) -> the changed region to add to an edit's result
+        self.region_provider: Callable[[str, Any, list[str]], str | None] | None = None
         self.auto_tester = AutoTester(config)   # completion.auto_test: Arbiter runs the tests itself
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
@@ -930,7 +933,7 @@ class SessionEngine:
         known = sorted(self._known.get(sid, ()))
         qctx = {"query": query, "misses": len(self.misses.recent(sid)), "skip": known,
                 "context_files": [k for k in known if "#" not in k], "pins_only": bool(known)}
-        pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 2500))
+        pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 3000))
         use_pack = self.pack_provider is not None and pack_tokens > 0
         ex = cf.ThreadPoolExecutor(max_workers=1)
         if use_pack:
@@ -1085,6 +1088,13 @@ class SessionEngine:
             if text:
                 parts.append(text)
         try:
+            region = self._edit_region(client, sid, payload)
+        except Exception:
+            self.stats["errors"] += 1
+            region = None
+        if region:
+            parts.append(region)
+        try:
             tested = self._auto_test_after_tool(sid, payload, deadline)
         except Exception:
             self.stats["errors"] += 1
@@ -1092,6 +1102,23 @@ class SessionEngine:
         if tested:
             parts.append(tested)
         return ui_status.hook_context(name, "\n".join(parts)) if parts else {}
+
+    def _edit_region(self, client: str, sid: str, payload: dict[str, Any]) -> str | None:
+        """The region a successful edit changed, with line numbers (``retrieval.edit_region_clients``)."""
+        if self.region_provider is None or client not in (self.config.get("retrieval.edit_region_clients") or []):
+            return None
+        tool = str(payload.get("tool_name") or "").lower()
+        resp = payload.get("tool_response")
+        if tool not in facts.EDIT_TOOLS or (isinstance(resp, dict) and resp.get("is_error") is True):
+            return None
+        root = self._repo_root(sid, payload)
+        paths = facts.edit_paths(tool, payload.get("tool_input"))
+        if not root or not paths:
+            return None
+        text = self.region_provider(root, payload.get("tool_input"), paths)
+        if text:
+            self.stats["edit_regions"] = self.stats.get("edit_regions", 0) + 1
+        return text
 
     def _note_known(self, sid: str, payload: dict[str, Any]) -> None:
         """Files the agent read or edited are in its context: a follow-up prompt's pack leaves them out."""

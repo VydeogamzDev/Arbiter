@@ -138,7 +138,8 @@ retrieval:
   auto_context: true            # pre-read task pack at the first prompt of a new task (bounded); on by default
                                 # since it cut cost 26% and turns 38% on the held-out benchmark (bench/)
   auto_context_max_tokens: 150  # file-name suggestions (when the pack is off)
-  auto_context_pack_tokens: 2500   # pre-read task pack: repo map, top files + their imports and tests; 0 = names only
+  auto_context_pack_tokens: 3000   # pre-read task pack: repo map, where named code appears, top files + their
+                                   # tests and imports; 0 = names only
   auto_context_pack_contents: true # false: map-only pack (repo map + ranked likely files, no file contents)
   auto_context_pack_models:        # pack per model (fnmatch on the model id): full | map | off. Measured: Opus
     "*opus*": full                 # saves 14% with contents; Sonnet 5 thinks 53% longer with them, ~even with a map
@@ -148,6 +149,10 @@ retrieval:
   auto_context_pack_unknown: map_then_upgrade   # model unknown at the first prompt (a client's first session;
                                          # later sessions reuse the last model seen): map now, file contents
                                          # at the first tool hook if the model is full-mode | defer | full | map | off
+  auto_context_usages: true     # the pack lists every file that mentions each code name the prompt names
+  auto_context_lean_note: false # the pack asks for a minimal change (Ponytail-style); opt-in until measured
+  edit_region_clients: [pi, codex]   # after an edit, show the changed region with line numbers (clients whose
+                                     # edit tools report only "replaced 1 block"); [] = off
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
   auto_context_client_deadline_ms: # per client, where the host allows a longer hook (Pi has no hook timeout)
     pi: 6000

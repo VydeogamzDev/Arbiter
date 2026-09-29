@@ -53,7 +53,11 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full_map", "full, but the context pack is map-only (repo map + ranked likely files, no contents)",
               hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_pack_contents": False}})),
-    Condition("full_tools", "full, plus Arbiter's Pi edit tools (insert_code, replace_def: no old code repeated)",
+    Condition("full_lean", "full, plus the pack's minimal-change note (Ponytail-style: write only what the "
+                           "request needs, only the tests it needs, a short final reply)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_lean_note": True}})),
+    Condition("full_tools","full, plus Arbiter's Pi edit tools (insert_code, replace_def: no old code repeated)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_EDIT_TOOLS", "1"),)),
     # Ablations: one subsystem at a time.
