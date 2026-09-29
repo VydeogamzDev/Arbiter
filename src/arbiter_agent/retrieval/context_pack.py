@@ -237,17 +237,13 @@ def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],
 
 
 def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_of: Callable[[str], list[str]],
-           files: set[str], limit: int = 8, tests_first: bool = False) -> list[str]:
+           files: set[str], limit: int = 8) -> list[str]:
     """Pins, then the top of the ranking, then what the top picks import, then their tests. With a
     pin (a file the prompt names or that defines a named symbol) the ranking adds no guesses:
-    on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task).
-    ``tests_first``: each top pick's first test before the imports."""
+    on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task)."""
     strong = [p for p in pins if not p.endswith("__init__.py")]     # a package init is where, not what
     head = list(dict.fromkeys(pins + ([] if strong else ranked[:3])))
     out = list(head)
-    if tests_first:
-        for p in head[:2]:
-            out += tests_of(p)[:1]
     for p in head[:3]:
         out += sorted(d for d in deps.get(p, set()) if d in files)
     for p in head[:2]:
