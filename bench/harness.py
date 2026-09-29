@@ -53,7 +53,7 @@ SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/
           "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1",
           "realrepo_v1": BENCH / "tasks_realrepo_v1",     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
           "realrepo_js_v1": BENCH / "tasks_realrepo_js_v1",   # date-fns 4.1.0, written before any run on it
-          "hard_v1": BENCH / "tasks_hard_v1"}                 # planted bugs + a fast-algorithm feature (luna-first routing)
+          "hard_v1": BENCH / "tasks_hard_v1"}   # planted bugs + a fast-algorithm feature (routing)
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
