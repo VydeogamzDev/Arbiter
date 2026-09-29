@@ -633,6 +633,9 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
     finally:
         if arb:
             arb.stop()
+            # The run's repo index is a cache nothing reads afterwards: ~45 MB per sympy run, and 1,000 runs
+            # filled the disk (2026-09-29).
+            shutil.rmtree(arb.paths.data / "indexes", ignore_errors=True)
     try:
         record["score"] = scoring.score(task["dir"], task, ws, rundir / "score-scratch", task_python(task),
                                         record.get("final_messages") or [])
