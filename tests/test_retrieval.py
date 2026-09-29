@@ -181,7 +181,16 @@ def test_retrieval_records_index_version(home, tmp_path):
         d.shutdown()
 
 
-def test_pack_names_usages_and_the_targets_own_test(svc, tmp_path):
+def test_pack_names_usages_and_the_targets_own_test(tmp_path):
+    svc = RetrievalService(tmp_path / "data", secrets.token_bytes(32), build_config(
+        {"retrieval": {"auto_context_usages": True, "auto_context_own_tests": True}})).start()
+    try:
+        _usages_and_own_test(svc, tmp_path)
+    finally:
+        svc.stop()
+
+
+def _usages_and_own_test(svc, tmp_path):
     repo = tmp_path / "repo"
     write(repo, "src/nextDay/index.ts", "export function nextDay(date: Date, day: number): Date {\n  return date\n}\n")
     write(repo, "src/nextDay/test.ts", "import { nextDay } from './index.js'\nit('a', () => nextDay(new Date(), 1))\n")

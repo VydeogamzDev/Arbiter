@@ -403,21 +403,24 @@ def core(ranked: list[str], pins: list[str], deps: dict[str, set[str]],
 
 
 def select(ranked: list[str], pins: list[str], deps: dict[str, set[str]], tests_of: Callable[[str], list[str]],
-           files: set[str], limit: int = 8) -> list[str]:
+           files: set[str], limit: int = 8, tests_first: bool = False) -> list[str]:
     """Pins, then the top of the ranking, then what the top picks import, then their tests. With a
     pin (a file the prompt names or that defines a named symbol) the ranking adds no guesses:
-    on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task)."""
+    on sympy they were unrelated modules (core/numbers.py for an IntegerPartition task).
+
+    ``tests_first``: each top pick's own test before the imports (retrieval.auto_context_own_tests).
+    It removed the agents' test-file reads (Pi sympy 9 -> 1) but not their requests, and the
+    bigger pack cost more than it saved (2026-09-28: Pi date-fns -31% -> -24%)."""
     strong = [p for p in pins if not p.endswith("__init__.py")]     # a package init is where, not what
     head = list(dict.fromkeys(pins + ([] if strong else ranked[:3])))
     out = list(head)
-    # Tests before imports: the target's test file was read in 9 of 10 real-repo task types (to copy
-    # its conventions and append a test), and was often cut from the pack by the limit (2026-09-28).
-    for p in head[:2]:
+    first = 1 if tests_first else 0
+    for p in head[:2] if tests_first else []:
         out += tests_of(p)[:1]
     for p in head[:3]:
         out += sorted(d for d in deps.get(p, set()) if d in files)
     for p in head[:2]:
-        out += tests_of(p)[1:]
+        out += tests_of(p)[first:]
     if not strong:
         out += ranked[3:5]
     seen: list[str] = []
@@ -505,7 +508,9 @@ def build(root: Path, files: list[str], picks: list[str], read: Callable[[str], 
         if key in skip or (p in skip and "(excerpt of a" not in block):
             continue                     # already in the conversation (shown, read or edited)
         if used + len(block) > budget:
-            continue                     # a smaller later pick may fit (a test file after a big excerpt)
+            if not shown:
+                continue
+            break
         lines.append(block)
         shown.append(p)
         if shown_keys is not None:

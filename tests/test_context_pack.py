@@ -107,8 +107,11 @@ def test_test_excerpt_shows_imports_named_tests_and_the_end():
 def test_pack_puts_the_targets_test_before_its_imports():
     deps = {"a.py": {"d1.py", "d2.py"}}
     files = {"a.py", "d1.py", "d2.py", "tests/test_a.py", "tests/test_a_more.py"}
-    got = cp.select([], ["a.py"], deps, lambda p: ["tests/test_a.py", "tests/test_a_more.py"], files)
+    tests = lambda p: ["tests/test_a.py", "tests/test_a_more.py"]  # noqa: E731
+    got = cp.select([], ["a.py"], deps, tests, files, tests_first=True)
     assert got == ["a.py", "tests/test_a.py", "d1.py", "d2.py", "tests/test_a_more.py"]
+    assert cp.select([], ["a.py"], deps, tests, files) == ["a.py", "d1.py", "d2.py", "tests/test_a.py",
+                                                           "tests/test_a_more.py"]
 
 
 def test_usage_block_and_extra_blocks_in_the_pack():
