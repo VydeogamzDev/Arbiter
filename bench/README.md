@@ -368,3 +368,10 @@ them Codex made ~30% more tool calls. Run-to-run noise is large: the same `full`
 -36% (Pi sympy), -17% and -11% (Codex date-fns) on different runs, so only same-run comparisons count.
 Pi's cache misses: Pi bills ~2x its new input as uncached (274k vs 135k new tokens on sympy), 70-90%
 of it within a prompt, with or without Arbiter; Codex has almost none.
+
+## Codex pack content (2026-09-28, same-run control): no gain from more
+
+The target's own test file in the pack (`full_tests`) and a 6,000-token pack without outlines
+(`full_big`): Codex sympy -12% (control) / -10% / -5%, date-fns -9% / -6% / -13%, all 14-15/15 passed,
+all within noise. Contents matter (map-only lost 9-16 points), but more than the 2,500-token pack
+doesn't pay. Code reverted.
