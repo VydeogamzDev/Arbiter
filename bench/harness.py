@@ -353,6 +353,8 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
                   "-c", f"mcp_servers.arbiter.args={json.dumps(cmd[1:])}"]
         if arb.cond.hooks:
             flags.append("--dangerously-bypass-hook-trust")
+    for setting in arb.cond.codex_config if arb else ():
+        flags += ["-c", setting]
     flags += json.loads(os.environ.get("ARBITER_BENCH_CODEX_ARGS", "[]"))   # e.g. a mock model provider
     env = with_task_path(task, {k: v for k, v in os.environ.items() if not k.startswith("ARBITER_")})
     if home is not None:

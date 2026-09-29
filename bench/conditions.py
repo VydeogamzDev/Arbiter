@@ -25,6 +25,7 @@ class Condition:
     encoder: bool = False           # load the tier-0 ONNX encoder (sensor shadow + semantic tool search)
     slim: str | None = None         # arbiter slim profile applied to the Claude settings (standard | lean)
     agent_env: tuple[tuple[str, str], ...] = ()   # extra environment for the agent process
+    codex_config: tuple[str, ...] = ()            # extra `codex exec -c key=value` settings
 
     @property
     def uses_arbiter(self) -> bool:
@@ -56,6 +57,16 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full_tools", "full, plus Arbiter's Pi edit tools (insert_code, replace_def: no old code repeated)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_EDIT_TOOLS", "1"),)),
+    Condition("full_patch", "full, plus Arbiter's Pi apply_patch tool (Codex's patch format: several files in one "
+                            "call)",
+              hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
+              agent_env=(("ARBITER_PI_APPLY_PATCH", "1"),)),
+    Condition("full_cxslim", "full, plus Codex features coding doesn't use switched off (apps, plugins, tool "
+                             "suggestions, browser, computer use, image generation, sleep, goals): -17% fixed prefix",
+              hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
+              codex_config=tuple(f"features.{f}=false" for f in (
+                  "apps", "plugins", "tool_suggest", "browser_use", "computer_use", "image_generation", "sleep_tool",
+                  "goals", "skill_search"))),
     # Ablations: one subsystem at a time.
     # The gate checks contracts the agent records through the MCP tools, so it needs both halves.
     Condition("gate_only", "completion gate in block mode: hooks + MCP contract tools, no injected context",

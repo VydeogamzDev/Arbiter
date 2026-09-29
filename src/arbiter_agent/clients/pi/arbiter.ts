@@ -16,7 +16,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { registerEditTools } from "./edit_tools.ts";
+import { registerApplyPatch, registerEditTools } from "./edit_tools.ts";
 
 const CLIENT = "pi";
 const TOKEN_HEADER = "X-Arbiter-Token";
@@ -58,6 +58,7 @@ function textOf(content: unknown): string {
 
 export default function (pi: any) {
   if (process.env.ARBITER_PI_EDIT_TOOLS === "1") registerEditTools(pi);
+  if (process.env.ARBITER_PI_APPLY_PATCH === "1") registerApplyPatch(pi);
   let target: { port: number; token: string } | undefined;
   let prompts = 0;
   let stopBlocks = 0;

@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { insertCode, replaceDef } from "./edit_core.ts";
+import { planPatch, summary, writeChange } from "./patch_core.ts";
 
 export function registerEditTools(pi: any): void {
   const run = (fn: (cwd: string) => string, file: string, ctx: any) =>
@@ -51,6 +52,36 @@ export function registerEditTools(pi: any): void {
     }),
     async execute(_id: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
       return run((cwd) => replaceDef(cwd, params), params.path, ctx);
+    },
+  });
+}
+
+/**
+ * Codex's apply_patch as a Pi tool (opt-in: ARBITER_PI_APPLY_PATCH=1). gpt-6-luna in Pi made one edit
+ * call per request and never two calls in one response, so a change to a file and its test took two
+ * requests (E-E-F in 32 of 45 real-repo prompts, 2026-09-28). A patch edits several files in one call,
+ * in the format GPT models are trained on (the custom tools above were not, and degenerated).
+ */
+export function registerApplyPatch(pi: any): void {
+  pi.registerTool({
+    name: "apply_patch",
+    label: "Apply patch",
+    description: "Edit files with a patch: one call can change several files (for example code and its test). " +
+      "Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ optional line near the change\n context line\n" +
+      "-removed line\n+added line\n*** Add File: path/to/new\n+line of the new file\n*** Delete File: path\n" +
+      "*** End Patch\nContext and - lines must match the file. The whole patch applies or none of it does.",
+    promptSnippet: "Edit one or more files in one call with a Codex-style patch",
+    promptGuidelines: ["Prefer apply_patch for changes: put every file a change needs (the code, its tests, an " +
+      "export) in one patch."],
+    parameters: Type.Object({
+      patch: Type.String({ description: "The patch, from *** Begin Patch to *** End Patch" }),
+    }),
+    async execute(_id: string, params: any, _signal: any, _onUpdate: any, ctx: any) {
+      const changes = planPatch(ctx.cwd, String(params.patch ?? ""));
+      for (const c of changes) {
+        await withFileMutationQueue(path.resolve(ctx.cwd, c.path), async () => writeChange(ctx.cwd, c));
+      }
+      return { content: [{ type: "text", text: summary(changes) }], details: undefined };
     },
   });
 }

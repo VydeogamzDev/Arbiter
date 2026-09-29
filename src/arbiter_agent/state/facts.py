@@ -106,7 +106,9 @@ def edit_paths(tool_name: str, tool_input: Any) -> list[str]:
             if isinstance(e, dict) and isinstance(e.get("file_path"), str):
                 paths.append(e["file_path"])
     blob = tool_input if isinstance(tool_input, str) else json.dumps(tool_input, ensure_ascii=False)
-    if "*** " in blob:
+    # A patch names its files; a write/edit that names its own file only carries text (which can
+    # itself contain patch syntax, as a test of a patch tool does).
+    if "*** " in blob and not paths:
         blob = blob.replace("\\n", "\n")
         paths += [p.strip() for p in PATCH_PATH.findall(blob)] + [p.strip() for p in MOVE_PATH.findall(blob)]
     seen: list[str] = []
