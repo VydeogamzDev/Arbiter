@@ -179,33 +179,3 @@ def test_retrieval_records_index_version(home, tmp_path):
         assert n == 1
     finally:
         d.shutdown()
-
-
-def test_pack_names_usages_and_the_targets_own_test(svc, tmp_path):
-    repo = tmp_path / "repo"
-    write(repo, "src/nextDay/index.ts", "export function nextDay(date: Date, day: number): Date {\n  return date\n}\n")
-    write(repo, "src/nextDay/test.ts", "import { nextDay } from './index.js'\nit('a', () => nextDay(new Date(), 1))\n")
-    write(repo, "src/other/test.ts", "import { nextDay } from '../nextDay/index.js'\nit('x', () => nextDay(1, 2))\n")
-    write(repo, "src/index.ts", "export * from './nextDay/index.js'\n")
-    write(repo, "CHANGELOG.md", "nextDay now takes options\n")
-    git(repo, "init", "-q")
-    ctx = {"query": "Add an includeSameDay option to `nextDay`; also add `nextWeekday`."}
-    out = svc.context_pack(str(repo), ctx, None, 2500)
-    assert out["picks"][:2] == ["src/nextDay/index.ts", "src/nextDay/test.ts"]
-    text = out["text"]
-    assert "`nextDay`, defined at src/nextDay/index.ts:1, appears in:" in text
-    assert "  src/other/test.ts: 1, 2    import { nextDay } from '../nextDay/index.js'" in text
-    assert "src/nextDay/ contains: index.ts, test.ts" in text and "non-code file(s): CHANGELOG.md" in text
-    assert "`nextWeekday`: no file in the repository mentions it." in text
-    assert "includeSameDay" not in text.split("where the named code appears")[1].split("---")[0].replace(
-        "`nextDay`", "")
-
-
-def test_edit_region_for_an_edit_and_a_denied_file(svc, tmp_path):
-    repo = tmp_path / "repo"
-    write(repo, "app.py", "a = 1\nb = 2\nc = 3\n")
-    write(repo, ".env", "TOKEN=1\nb = 2\n")
-    got = svc.edit_region(str(repo), {"path": "app.py", "edits": [{"oldText": "b = 1", "newText": "b = 2\n"}]},
-                          ["app.py"])
-    assert got == "[Arbiter] app.py after this edit (3 lines):\n1| a = 1\n2| b = 2\n3| c = 3"
-    assert svc.edit_region(str(repo), {"path": ".env", "edits": [{"newText": "b = 2\n"}]}, [".env"]) is None

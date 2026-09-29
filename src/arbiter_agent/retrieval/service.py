@@ -6,9 +6,7 @@ response carries the index stamp (version, generation, HEAD)."""
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -21,47 +19,6 @@ from arbiter_agent.state.repo_identity import RepoIdentity, identify
 
 log = logging.getLogger("arbiter.retrieval")
 HUB_IMPORTERS = 25      # a module imported by more files than this is a hub, not task context
-CODE_EXTS = (".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".go", ".rs", ".java",
-             ".kt", ".cs", ".rb", ".php", ".swift", ".scala", ".c", ".cc", ".cpp", ".h", ".hpp", ".vue", ".svelte")
-USAGE_MAX_UNDEFINED = 40   # a name the repo doesn't define, mentioned in more files than this, isn't its code
-USAGE_SKIP = {"True", "False", "None", "self", "cls", "null", "undefined", "true", "false", "this", "options",
-              "args", "kwargs", "default", "value", "string", "number", "object", "Date", "list", "dict"}
-
-
-def new_text_blocks(tool_input: Any, raw_path: str, rel: str) -> list[str]:
-    """The text an edit put into a file: Pi/Claude replacement strings, or the resulting lines of
-    each hunk of an apply_patch patch. Whole-file writes give nothing (the agent has the file)."""
-    out: list[str] = []
-    if isinstance(tool_input, dict):
-        listed = tool_input.get("edits")
-        for e in listed if isinstance(listed, list) else [tool_input]:
-            if not isinstance(e, dict):
-                continue
-            if isinstance(e.get("file_path"), str) and e["file_path"] not in (raw_path, rel):
-                continue
-            for k in ("newText", "new_string", "new_str", "newString"):
-                if isinstance(e.get(k), str) and e[k].strip():
-                    out.append(e[k])
-        if out:
-            return out
-    blob = tool_input if isinstance(tool_input, str) else json.dumps(tool_input, ensure_ascii=False)
-    if "*** Update File:" not in blob:
-        return []
-    if not isinstance(tool_input, str):
-        blob = blob.replace("\\n", "\n").replace('\\"', '"')
-    for sec in re.split(r"\*\*\* (?=Update File:|Add File:|Delete File:|End Patch)", blob):
-        m = re.match(r"Update File: ([^\n]+)\n", sec)
-        if not m:
-            continue
-        name = m.group(1).strip().replace("\\", "/").lstrip("./")
-        if not (rel.endswith(name) or name.endswith(rel)):
-            continue
-        for hunk in re.split(r"\n@@[^\n]*", sec[m.end() - 1:]):
-            rows = hunk.splitlines()
-            body = [ln[1:] for ln in rows if ln[:1] in (" ", "+")]
-            if any(ln[:1] == "+" for ln in rows) and body:
-                out.append("\n".join(body))
-    return out
 
 
 class RetrievalService:
@@ -193,22 +150,8 @@ class RetrievalService:
         pins = [p["path"] for p in ranking.get("pins", [])]
         ranked = [r["path"] for r in ranking.get("ranked", [])]
 
-        fileset = set(files)
-        tests_cache: dict[str, list[str]] = {}
-
         def tests_of(p: str) -> list[str]:
-            """The file's own test file by the repo's naming layout first (src/addDays/index.ts ->
-            src/addDays/test.ts; pkg/misc.py -> pkg/tests/test_misc.py), then index tests named after it.
-            Tests that merely import the file came first before, alphabetically: sympy's misc.py got
-            geometry/tests/test_point.py, and date-fns targets got none (2026-09-28)."""
-            if p not in tests_cache:
-                from arbiter_agent.completion.auto_test import related_tests
-
-                own = [t for t in related_tests(Path(ident.root), [p]) if t in fileset and t != p]
-                stem = Path(p).parent.name if Path(p).stem in ("index", "__init__") else Path(p).stem.split(".")[0]
-                named = [t for t in idx.related(ident.root, p)["tests"] if stem and stem in Path(t).name]
-                tests_cache[p] = [t for t in dict.fromkeys(own + named) if policy.allowed(t)]
-            return tests_cache[p]
+            return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
 
         if ctx.get("pins_only"):
             # A follow-up prompt of the same conversation: only files the prompt names outright. The
@@ -262,124 +205,15 @@ class RetrievalService:
         shown_keys: list[str] = []
         hit_lines = {**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
                      **{q["path"]: int(q.get("line") or 1) for q in ranking.get("pins", [])}}
-        extra = []
-        if self.config.get("retrieval.auto_context_usages", True):
-            try:
-                ub = context_pack.usage_block(self._usages(idx, ident.root, str(ctx.get("query") or ""),
-                                                           files, picks, policy), max_chars=max_tokens)
-            except Exception:
-                log.exception("usage lookup failed")
-                ub = None
-            if ub:
-                extra.append(ub)
-        lean = context_pack.LEAN_NOTE if self.config.get("retrieval.auto_context_lean_note", False) else None
         text = context_pack.build(root, files, picks, read, max_tokens,
                                   contents=bool(self.config.get("retrieval.auto_context_pack_contents", True)),
                                   test_note=note, full=full, query=str(ctx.get("query") or ""), hit_lines=hit_lines,
-                                  skip=skip, shown_keys=shown_keys, extra=extra, note=lean)
+                                  skip=skip, shown_keys=shown_keys)
         map_text = None if skip else context_pack.build(root, files, picks, read, max_tokens, contents=False,
                                                         test_note=note)
         return self._envelope(ident, idx, res, {**ranking, "picks": picks, "text": text, "map_text": map_text,
                                                 "shown_keys": shown_keys,
                                                 "tokens": (len(text) + 3) // 4 if text else 0})
-
-    def _usages(self, idx: RepoIndex, root: str, query: str, files: list[str], picks: list[str],
-                policy: AccessPolicy) -> list[dict[str, Any]]:
-        """For each code name the prompt mentions: every file that mentions it (the index's full-text
-        channel finds candidates, a word-boundary scan of each confirms them and gives the lines).
-        Files are scanned raw; only the snippets shown are redacted (redacting every file scanned
-        took 2 s for a name in 100+ files)."""
-        from arbiter_agent.completion.auto_test import is_test_file
-        from arbiter_agent.retrieval import candidates
-
-        fileset = set(files)
-        project = {Path(root).name.lower()} | {f.split("/", 1)[0].lower() for f in files if "/" in f}
-        names = []
-        for n in candidates.named_symbols(query, project):   # `f(date, options)` -> f
-            m = re.match(r"[A-Za-z_$][\w$]*", n)
-            if m and len(m.group(0)) > 2 and m.group(0) not in USAGE_SKIP and m.group(0) not in names:
-                names.append(m.group(0))
-        out: list[dict[str, Any]] = []
-        for name in names[:4]:
-            rx = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
-            found = idx.symbol(root, name, limit=10)
-            defs = [d for d in found["definitions"] if d["path"] in fileset]
-            if len({d["path"] for d in defs}) > candidates.MAX_DEFINERS:
-                continue                                  # a generic name (`key`): everywhere, says nothing
-            paths = list(dict.fromkeys(h["path"] for h in idx.search(root, name, limit=400, policy=policy)
-                                       if h["path"] in fileset))
-            if not defs and len(paths) > USAGE_MAX_UNDEFINED:
-                continue                                  # a builtin or common word (`len`): not the repo's code
-            code: list[dict[str, Any]] = []
-            other: list[str] = []
-            rootp = Path(root)
-            for path in paths:
-                try:
-                    data = (rootp / path).read_bytes()
-                except OSError:
-                    continue
-                if b"\0" in data[:4096]:
-                    continue
-                text = data.decode("utf-8", errors="replace")
-                lines = text.splitlines()
-                hits = [i + 1 for i, ln in enumerate(lines) if rx.search(ln)]
-                if not hits:
-                    continue
-                if not path.endswith(CODE_EXTS):
-                    other.append(path)
-                    continue
-                entry: dict[str, Any] = {"path": path, "lines": hits}
-                def_lines = {int(d["line"]) for d in defs if d["path"] == path}
-                if path not in picks:
-                    first = next((n for n in hits if n not in def_lines), None)
-                    if first is not None:
-                        entry["snippet"] = self._redact(lines[first - 1].strip()[:110])[0]
-                code.append(entry)
-            if not code and not defs and f"`{name}" not in query:
-                continue                                  # an unticked word that isn't code: say nothing
-            rank = {d["path"]: 0 for d in defs}
-            code.sort(key=lambda e: (rank.get(e["path"], 1 if is_test_file(e["path"].rsplit("/", 1)[-1]) else 2),
-                                     e["path"]))
-            item: dict[str, Any] = {"name": name, "definitions": defs, "files": code, "other": other}
-            if defs and "/" in defs[0]["path"]:
-                folder = defs[0]["path"].rsplit("/", 1)[0]
-                kids = sorted({f[len(folder) + 1:].split("/", 1)[0] for f in files if f.startswith(folder + "/")})
-                if len(kids) <= 8:
-                    item["folder"] = (folder, kids)
-            out.append(item)
-        return out
-
-    def edit_region(self, cwd: str, tool_input: Any, paths: list[str]) -> str | None:
-        """The changed region of each edited file, for the edit's tool result (see
-        :func:`context_pack.edit_region`). Only allowed files, redacted; None for whole-file writes."""
-        from arbiter_agent.retrieval import context_pack
-
-        ident = identify(cwd)
-        root = Path(ident.root)
-        policy = AccessPolicy.for_repo(root, self.include_generated)
-        out: list[str] = []
-        for raw in paths[:2]:
-            p = Path(raw)
-            try:
-                full = (p if p.is_absolute() else root / p).resolve()
-                rel = full.relative_to(root.resolve()).as_posix()
-            except (ValueError, OSError):
-                continue
-            if not policy.allowed(rel):
-                continue
-            blocks = new_text_blocks(tool_input, raw, rel)
-            if not blocks:
-                continue
-            try:
-                data = full.read_bytes()
-            except OSError:
-                continue
-            if b"\0" in data[:4096]:
-                continue
-            region = context_pack.edit_region(rel, data.decode("utf-8", errors="replace"), blocks)
-            if region:
-                out.append(self._redact(region)[0])
-        return "\n".join(out)[:4000] or None
 
     def status(self, cwd: str) -> dict[str, Any]:
         ident, idx, _, res = self.prepare(cwd, budget_s=0.5)
