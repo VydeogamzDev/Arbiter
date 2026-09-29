@@ -761,10 +761,14 @@ class SessionEngine:
             if not can_block:
                 mode = "annotate"       # this client can't hold back a stop (e.g. Cursor): record only
             if self.config.get("routing.enabled", False):
+                # Routing's checks send a failing turn back whatever the gate mode (annotate by default):
+                # sending the cheap model back is what makes it safe to use. Clients that can't hold a stop
+                # back only record.
+                rmode = "block" if can_block else "annotate"
                 tested = self._verify_turn(sid, deadline)
                 if tested is not None and tested.result.status == "fail":
-                    return self._failed_turn(sid, st, tested, mode, max_blocks)
-                if tested is None and mode == "block" and int(st["stop_blocks"]) < max_blocks:
+                    return self._failed_turn(sid, st, tested, rmode, max_blocks)
+                if tested is None and rmode == "block" and int(st["stop_blocks"]) < max_blocks:
                     asked = self._ask_for_tests(sid, st)
                     if asked:
                         return asked

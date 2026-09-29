@@ -207,6 +207,19 @@ def cmd_retention(a: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_routing(a: argparse.Namespace) -> int:
+    from arbiter_agent.setup import routing
+
+    paths = _paths()
+    if a.action == "enable":
+        print(routing.enable(paths, codex_default=a.codex_default, dry_run=a.dry_run))
+    elif a.action == "disable":
+        print(routing.disable(paths))
+    else:
+        print(routing.status(paths))
+    return 0
+
+
 def cmd_slim(a: argparse.Namespace) -> int:
     from arbiter_agent.setup import slim
 
@@ -357,6 +370,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--profile", choices=["standard", "lean"], default="standard")
     s.add_argument("--dry-run", action="store_true", help="show what would change")
     s.set_defaults(fn=cmd_slim)
+
+    s = sub.add_parser("routing", help="cheap model first: test every code-changing turn, send failures back, "
+                                       "recommend the strong model after repeated ones (opt-in, reversible)")
+    s.add_argument("action", nargs="?", choices=["status", "enable", "disable"], default="status")
+    s.add_argument("--codex-default", action="store_true",
+                   help="also set Codex's default model to gpt-6-luna at medium effort (previous values are restored "
+                        "by `arbiter routing disable`)")
+    s.add_argument("--dry-run", action="store_true", help="show what would change")
+    s.set_defaults(fn=cmd_routing)
 
     s = sub.add_parser("uninstall", help="remove exactly what setup added")
     s.add_argument("--clients")
