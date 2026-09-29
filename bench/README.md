@@ -395,3 +395,25 @@ tool calls. Low effort halves sol's cost. Delegating implementation to luna sub-
 AGENTS.md request) saves 7-25% and loses pass rate: the sol main agent still reviews at length.
 Codex hooks can't change the model or effort of a turn (tested: model fields in UserPromptSubmit
 output are ignored); Pi extensions can (`pi.setModel`, `pi.setThinkingLevel`).
+
+## Luna-first routing with per-turn verification (2026-09-29)
+
+`full_route` (`routing.enabled`): every turn that changed code is tested at stop, whatever the last
+message says; if Arbiter's own run can't finish inside Codex's 5 s hook budget, the agent is sent back
+once to run the related tests itself; repeated failures on a cheap model would recommend the strong one
+(the harness, with `--escalate-model gpt-6-sol`, switches the thread as a user would). Codex, gpt-6-luna
+at medium effort, 3 reps, priced at API rates:
+
+| suite | luna-first + verification | gpt-6-sol / high | gpt-6-luna, `full` |
+|---|---|---|---|
+| hard_v1 (planted bugs + a fast algorithm) | 24/24, $0.0041/session | 21/24, $0.129 | 21/23, $0.0039 |
+| realrepo_v1 (sympy) | 14/15, $0.0057 | 12/15, $0.231 | 15/15, $0.0049 |
+| realrepo_js_v1 (date-fns) | 15/15, $0.0055 | 15/15, $0.347 | 15/15, $0.0050 |
+
+97-98% cheaper than sol/high at an equal or better pass rate. Arbiter sent luna back 19 times (17 to run
+tests it had skipped, 2 on failures); no session needed escalating. Without per-turn verification, two of
+luna's three hard_v1 failures had finished with no test run at all (the claim-only gate saw no claim).
+
+Run notes: 9 concurrent agents exhausted memory (keep <= 6); per-run index caches filled the disk (now
+removed after each run); hard_v1's distinct_partitions dropped a hidden requirement the prompt never asked
+for (raising on negative input), and earlier hard_v1 runs were rescored.
