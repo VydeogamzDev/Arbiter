@@ -57,7 +57,16 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full_tools", "full, plus Arbiter's Pi edit tools (insert_code, replace_def: no old code repeated)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_EDIT_TOOLS", "1"),)),
-    Condition("full_patch", "full, plus Arbiter's Pi apply_patch tool (Codex's patch format: several files in one "
+    Condition("full_tests", "full, plus each top pick's own test file (by repo layout) in the pack",
+              hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_own_tests": True}})),
+    Condition("full_big", "full_tests, plus a 6,000-token pack: no outlines, 12,000 characters per file",
+              hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"retrieval": {"auto_context_own_tests": True,
+                                                           "auto_context_pack_no_outlines": True,
+                                                           "auto_context_pack_tokens": 6000,
+                                                           "auto_context_pack_file_chars": 12000}})),
+    Condition("full_patch","full, plus Arbiter's Pi apply_patch tool (Codex's patch format: several files in one "
                             "call)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_APPLY_PATCH", "1"),)),

@@ -148,6 +148,9 @@ retrieval:
   auto_context_pack_unknown: map_then_upgrade   # model unknown at the first prompt (a client's first session;
                                          # later sessions reuse the last model seen): map now, file contents
                                          # at the first tool hook if the model is full-mode | defer | full | map | off
+  auto_context_own_tests: false     # each top pick's own test file (by repo layout) before its imports
+  auto_context_pack_no_outlines: false  # large repos: every pick in full or excerpted, no outlines
+  auto_context_pack_file_chars: 6000    # one file's share of the pack before it's excerpted or cut
   auto_context_deadline_ms: 2500   # prompt-hook wait for the pack; a late pack comes with the next tool hook instead
   auto_context_client_deadline_ms: # per client, where the host allows a longer hook (Pi has no hook timeout)
     pi: 6000

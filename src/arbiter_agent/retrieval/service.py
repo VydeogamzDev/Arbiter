@@ -30,6 +30,10 @@ class RetrievalService:
         self.budget_s = float(config.get("retrieval.refresh_budget_s", 3.0))
         self.include_generated = bool(config.get("retrieval.include_generated", False))
         self.embeddings = backend_from_config(config)
+        from arbiter_agent.retrieval import context_pack
+
+        # One file's share of the pack before it's excerpted or cut (a per-daemon setting).
+        context_pack.MAX_FILE_CHARS = int(config.get("retrieval.auto_context_pack_file_chars", 6000))
         self._indexes: dict[str, RepoIndex] = {}
         self._lock = threading.Lock()
         self.queue = WorkQueue("retrieval", capacity=16)
@@ -150,8 +154,21 @@ class RetrievalService:
         pins = [p["path"] for p in ranking.get("pins", [])]
         ranked = [r["path"] for r in ranking.get("ranked", [])]
 
+        own_tests = bool(self.config.get("retrieval.auto_context_own_tests", False))
+        fileset = set(files)
+
         def tests_of(p: str) -> list[str]:
-            return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
+            """The index's tests of a file; with retrieval.auto_context_own_tests, its own test file by
+            the repo's layout first (src/X/index.ts -> src/X/test.ts, pkg/m.py -> pkg/tests/test_m.py):
+            the index put tests that merely import the file first (sympy's misc.py got
+            geometry/tests/test_point.py) and gave date-fns targets none, which Codex then read itself."""
+            tests = [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
+            if not own_tests:
+                return tests
+            from arbiter_agent.completion.auto_test import related_tests
+
+            own = [t for t in related_tests(Path(ident.root), [p]) if t in fileset and t != p and policy.allowed(t)]
+            return list(dict.fromkeys(own + tests))
 
         if ctx.get("pins_only"):
             # A follow-up prompt of the same conversation: only files the prompt names outright. The
@@ -159,8 +176,9 @@ class RetrievalService:
             picks = pins[:4]
             full = set(picks)
         else:
-            picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
-            full = context_pack.core(ranked, pins, deps, tests_of, set(files))
+            picks = context_pack.select(ranked, pins, deps, tests_of, set(files), tests_first=own_tests)
+            full = None if self.config.get("retrieval.auto_context_pack_no_outlines", False) else \
+                context_pack.core(ranked, pins, deps, tests_of, set(files))
             # The package __init__ that re-exports the top file: adding a public function means
             # exporting it there (every digital_root run on sympy read ntheory/__init__.py itself).
             # A package's hub __init__ (sympy/__init__.py: 161 importers) isn't task context; a hub module
@@ -172,7 +190,8 @@ class RetrievalService:
                 if init and init in set(files) and init in (rev or {}).get(top, set()):
                     picks = [p for p in picks if p != init]
                     picks.insert(min(2, len(picks)), init)
-                    full.add(init)
+                    if full is not None:
+                        full.add(init)
                     break
         root = Path(ident.root)
 
