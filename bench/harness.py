@@ -559,6 +559,11 @@ def run_one(task: dict[str, Any], cond: Condition, rep: int, out: Path, args: ar
     rundir.mkdir(parents=True)
     ws = out.parent.parent / "ws" / f"{task['id']}-{cond.name}-{rep}-{token}"   # short path, unique token
     prepare_workspace(task, ws)
+    for rel, text in cond.workspace_files:
+        # Condition-owned files (an AGENTS.md): untracked and excluded, so diffs and scoring don't see them.
+        (ws / rel).write_text(text, encoding="utf-8")
+        with (ws / ".git" / "info" / "exclude").open("a", encoding="utf-8") as f:
+            f.write(f"/{rel}\n")
     real = args.agent in ("claude", "codex", "pi")
     known = args.model if (real and not getattr(args, "first_session", False)) else None
     client = {"codex": "codex", "pi": "pi"}.get(args.agent, "claude_code")

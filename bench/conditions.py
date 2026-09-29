@@ -26,12 +26,20 @@ class Condition:
     slim: str | None = None         # arbiter slim profile applied to the Claude settings (standard | lean)
     agent_env: tuple[tuple[str, str], ...] = ()   # extra environment for the agent process
     codex_config: tuple[str, ...] = ()            # extra `codex exec -c key=value` settings
+    workspace_files: tuple[tuple[str, str], ...] = ()   # (path, text) written into the workspace, git-excluded
 
     @property
     def uses_arbiter(self) -> bool:
         return bool(self.hooks or self.mcp)
 
 
+DELEGATE_AGENTS_MD = """# Working in this repository
+
+Delegate code changes: for each request that changes code, spawn one sub-agent and give it the whole
+task (what to change, the tests to add or update, how to check the result). Don't explore or edit the
+code yourself first. When the sub-agent finishes, review its diff and the test result, fix anything
+that is wrong, and reply to the user.
+"""
 BLOCK = {"completion": {"gate_mode": "block"}}
 CONTEXT = {"retrieval": {"auto_context": True}, "ui": {"inject_status": True}}
 
@@ -57,7 +65,13 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full_tools", "full, plus Arbiter's Pi edit tools (insert_code, replace_def: no old code repeated)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_EDIT_TOOLS", "1"),)),
-    Condition("full_patch", "full, plus Arbiter's Pi apply_patch tool (Codex's patch format: several files in one "
+    Condition("full_delegate", "full, plus Codex sub-agents on gpt-6-luna and an instruction to delegate a "
+                               "well-scoped change to one, then review its diff (main agent keeps its model)",
+              hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
+              codex_config=('agents.default_subagent_model="gpt-6-luna"',
+                            'agents.default_subagent_reasoning_effort="medium"'),
+              workspace_files=(("AGENTS.md", DELEGATE_AGENTS_MD),)),
+    Condition("full_patch","full, plus Arbiter's Pi apply_patch tool (Codex's patch format: several files in one "
                             "call)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_APPLY_PATCH", "1"),)),
