@@ -349,3 +349,22 @@ the raw figure). Recomputed from the last turn's cumulative usage, full vs basel
 (95% CI -20% to -3%; not -12%), date-fns **-17%** (-28% to -5%; not -20%). By prompt: sympy -16% /
 -3% / -9%, date-fns -27% / -8% / -4%. Arbiter's Codex savings are almost all in the first prompt.
 Pi and one-prompt Codex runs were not affected.
+
+## Pi apply_patch, Codex map-only pack, Codex slim (2026-09-28, each with a same-run `full` control)
+
+gpt-6-luna, 3 reps, 15 sessions per cell, cost vs the reused baselines (Codex costs per-turn, after
+the cumulative-usage fix):
+
+| agent / repo | full (same run) | variant | tool calls full -> variant | passed |
+|---|---|---|---|---|
+| Pi / sympy | -36% | apply_patch -38% | 143 -> 112 | 14 / 14 |
+| Pi / date-fns | -40% | apply_patch -34% | 182 -> 137 | 12 / 15 |
+| Codex / sympy | -16% | map-only 0%, slim -5% | 117 -> 159 / 136 | 15 / 15 |
+| Codex / date-fns | -11% | map-only -2%, slim +5% | 119 -> 150 / 132 | 15 / 15 |
+
+No variant beats its control on cost. Pi's apply_patch (opt-in `ARBITER_PI_APPLY_PATCH=1`) merges
+edits into fewer calls but not cheaper sessions. For Codex the pack's file contents matter: without
+them Codex made ~30% more tool calls. Run-to-run noise is large: the same `full` measured -27% and
+-36% (Pi sympy), -17% and -11% (Codex date-fns) on different runs, so only same-run comparisons count.
+Pi's cache misses: Pi bills ~2x its new input as uncached (274k vs 135k new tokens on sympy), 70-90%
+of it within a prompt, with or without Arbiter; Codex has almost none.
