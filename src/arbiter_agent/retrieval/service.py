@@ -195,16 +195,12 @@ class RetrievalService:
 
         fileset = set(files)
         tests_cache: dict[str, list[str]] = {}
-        own_tests = bool(self.config.get("retrieval.auto_context_own_tests", False))
 
         def tests_of(p: str) -> list[str]:
-            """With retrieval.auto_context_own_tests: the file's own test file by the repo's naming
-            layout first (src/addDays/index.ts -> src/addDays/test.ts; pkg/misc.py ->
-            pkg/tests/test_misc.py), then index tests named after it. Otherwise the index's tests, which
-            put tests that merely import the file first, alphabetically (sympy's misc.py got
-            geometry/tests/test_point.py; date-fns targets got none), and measured cheaper (2026-09-28)."""
-            if not own_tests:
-                return [t for t in idx.related(ident.root, p)["tests"] if policy.allowed(t)]
+            """The file's own test file by the repo's naming layout first (src/addDays/index.ts ->
+            src/addDays/test.ts; pkg/misc.py -> pkg/tests/test_misc.py), then index tests named after it.
+            Tests that merely import the file came first before, alphabetically: sympy's misc.py got
+            geometry/tests/test_point.py, and date-fns targets got none (2026-09-28)."""
             if p not in tests_cache:
                 from arbiter_agent.completion.auto_test import related_tests
 
@@ -220,7 +216,7 @@ class RetrievalService:
             picks = pins[:4]
             full = set(picks)
         else:
-            picks = context_pack.select(ranked, pins, deps, tests_of, set(files), tests_first=own_tests)
+            picks = context_pack.select(ranked, pins, deps, tests_of, set(files))
             full = context_pack.core(ranked, pins, deps, tests_of, set(files))
             # The package __init__ that re-exports the top file: adding a public function means
             # exporting it there (every digital_root run on sympy read ntheory/__init__.py itself).
@@ -267,7 +263,7 @@ class RetrievalService:
         hit_lines = {**{r["path"]: int(r.get("line") or 1) for r in ranking.get("ranked", [])},
                      **{q["path"]: int(q.get("line") or 1) for q in ranking.get("pins", [])}}
         extra = []
-        if self.config.get("retrieval.auto_context_usages", False):
+        if self.config.get("retrieval.auto_context_usages", True):
             try:
                 ub = context_pack.usage_block(self._usages(idx, ident.root, str(ctx.get("query") or ""),
                                                            files, picks, policy), max_chars=max_tokens)

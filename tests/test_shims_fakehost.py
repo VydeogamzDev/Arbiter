@@ -195,28 +195,14 @@ def test_pi_client_over_http(daemon, tmp_path):
         h.session_start()
         h.prompt("please fix the parser")
         h.tool("pytest -q", "3 passed in 0.10s", 0)
+        (tmp_path / "parser.py").write_text("def parse(s):\n    return s.strip()\n\n\ndef other():\n    pass\n")
+        edit = h.send_hook("PostToolUse", {**h._common(), "tool_name": "edit", "tool_use_id": "call_e1",
+                                           "tool_input": {"path": "parser.py", "edits": [
+                                               {"oldText": "return s", "newText": "    return s.strip()\n"}]},
+                                           "tool_response": {"content": [{"type": "text", "text": "ok"}]}})
         h.stop("Done. All tests pass.")
     assert all(c.ok for c in h.calls), [c.error for c in h.calls]
+    region = edit.response.get("hookSpecificOutput", {}).get("additionalContext", "")
+    assert "[Arbiter] parser.py after this edit (6 lines):\n1| def parse(s):\n2|     return s.strip()" in region
     st = status(home)
-    assert st["ingest"].get("stored") == 5 and not st["ingest"].get("rejected")
-
-
-def test_edit_region_in_the_edit_result(home, tmp_path):
-    """retrieval.edit_region_clients (off by default): the changed lines come back with the edit."""
-    home.config_file.write_text("retrieval:\n  edit_region_clients: [pi]\n", encoding="utf-8")
-    proc = spawn_daemon(home)
-    try:
-        assert wait_running(home)
-        (tmp_path / "parser.py").write_text("def parse(s):\n    return s.strip()\n\n\ndef other():\n    pass\n")
-        with FakeHost(home, client="pi", transport="http", cwd=str(tmp_path), transcript_dir=tmp_path) as h:
-            h.session_start()
-            h.prompt("tidy the parser")
-            edit = h.send_hook("PostToolUse", {**h._common(), "tool_name": "edit", "tool_use_id": "call_e1",
-                                               "tool_input": {"path": "parser.py", "edits": [
-                                                   {"oldText": "return s", "newText": "    return s.strip()\n"}]},
-                                               "tool_response": {"content": [{"type": "text", "text": "ok"}]}})
-        region = edit.response.get("hookSpecificOutput", {}).get("additionalContext", "")
-        assert "[Arbiter] parser.py after this edit (6 lines):\n1| def parse(s):\n2|     return s.strip()" in region
-    finally:
-        lifecycle.stop(home, timeout=5)
-        proc.wait(timeout=10)
+    assert st["ingest"].get("stored") == 6 and not st["ingest"].get("rejected")

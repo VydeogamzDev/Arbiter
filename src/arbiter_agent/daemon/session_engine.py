@@ -933,7 +933,7 @@ class SessionEngine:
         known = sorted(self._known.get(sid, ()))
         qctx = {"query": query, "misses": len(self.misses.recent(sid)), "skip": known,
                 "context_files": [k for k in known if "#" not in k], "pins_only": bool(known)}
-        pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 2500))
+        pack_tokens = int(self.config.get("retrieval.auto_context_pack_tokens", 3000))
         use_pack = self.pack_provider is not None and pack_tokens > 0
         ex = cf.ThreadPoolExecutor(max_workers=1)
         if use_pack:

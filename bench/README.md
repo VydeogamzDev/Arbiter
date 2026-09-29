@@ -332,33 +332,3 @@ resumed with `codex exec resume`; 3 reps, 30 sessions per repo, no leaks into th
 No stop blocks, tampering or false "done" claims. Smaller than Pi's -31% on the same repos because
 Codex re-sends ~15k tokens of fixed context with every request. The date-fns runs include 41b617b
 (vitest load failures, related-run coverage); the Pi date-fns run did not.
-
-## Predict-ahead attachments and a write-less note (2026-09-28): measured off
-
-`bench/replay.py` replays recorded sessions and tags every read and search Arbiter could have
-answered ahead of time. On the Arbiter-on runs above it put 19-27% of requests (12-18% of cost, an
-upper bound) down to predictable lookups: searches for names the prompt mentions (4-10% of cost),
-re-reads of the agent's own edits (2-6%), the target's test file (2-4%). Hiding earlier prompts' tool
-outputs at each new prompt nets -4% to +2% in 3-prompt sessions (the cache break costs what it saves).
-
-Built from that (ec2d088), each behind a flag: the pack lists every file that mentions each named
-symbol (`auto_context_usages`); each top pick's own test file by repo layout, excerpted when large
-(`auto_context_own_tests`); the changed lines with line numbers after each edit
-(`edit_region_clients`); a Ponytail-style minimal-change note (`auto_context_lean_note`, condition
-`full_lean`). Measured on gpt-6-luna, 3 reps, 15 sessions per cell, against the runs above
-(baselines reused):
-
-| agent / repo | full before | full + attachments | + lean note | passed (before / new / lean) |
-|---|---|---|---|---|
-| Pi / sympy | -27% | -24% (-36% to -7%) | -11% | 14 / 14 / 13 |
-| Pi / date-fns | -31% | -24% (-30% to -17%) | -24% | 13 / 14 / 15 |
-| Codex / sympy | -12% | -12% (-25% to +16%) | -15% | 15 / 14 / 14 |
-| Codex / date-fns | -20% | -11% (-20% to -4%) | -15% | 15 / 15 / 15 |
-
-The attachments removed the lookups they target (Pi on sympy: test-file reads 9 -> 1, named searches
-23 -> 14), but not requests (202 -> 199): the agents fold lookups into requests they make anyway, so
-the replay's "removable request" estimate didn't hold. Codex re-read the files the pack now showed
-(re-reads of shown content 8 -> 17), and neither agent re-read its own edits less with the region
-attached (Pi 20 -> 24, Codex 12 -> 14). The bigger pack raised input tokens (Pi date-fns 1.16M ->
-1.34M). All four default to off; the pack is back to 2,500 tokens. The lean note is no consistent
-gain either: -11% to -24% against -12% to -31% without it.
