@@ -77,7 +77,7 @@ def setup_logging(paths: ArbiterPaths, *, redactor: Any | None = None, rotation_
                                                    backupCount=backups, encoding="utf-8")
     handler.setFormatter(JsonFormatter(redactor))
     logger.addHandler(handler)
-    if stderr:
+    if stderr and sys.stderr is not None:          # None under pythonw (the Windows daemon)
         sh = logging.StreamHandler(sys.stderr)
         sh.setFormatter(JsonFormatter(redactor))
         logger.addHandler(sh)

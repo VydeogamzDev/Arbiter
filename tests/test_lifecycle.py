@@ -70,7 +70,7 @@ def test_autostart_launches_outside_client_job(home):
         # the stub's own job (so the pair lives and dies together). The process WMI created is the
         # top of our tree, and that must be outside any client job.
         top = pid
-        if parent_name.lower() == "python.exe":
+        if parent_name.lower() in ("python.exe", "pythonw.exe"):
             top = int(parent_pid)
             parent_name = _proc_info(top)[1]
         assert parent_name == "WmiPrvSE.exe", parent_name

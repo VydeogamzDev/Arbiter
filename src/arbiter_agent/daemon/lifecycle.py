@@ -23,8 +23,20 @@ LAUNCH_DEBOUNCE_S = 5.0
 CLIENT_ENV_VARS = ("CODEX_HOME", "CLAUDE_CONFIG_DIR", "ARBITER_CLIENT_HOME")
 
 
+def daemon_python() -> str:
+    """On Windows, pythonw.exe beside the interpreter: a console program started through WMI gets a
+    visible console window (a Windows Terminal window by default on Windows 11), which takes focus
+    and kills the daemon if closed. pythonw has no console to show."""
+    exe = Path(sys.executable)
+    if sys.platform == "win32" and exe.name.lower() == "python.exe":
+        w = exe.with_name("pythonw.exe")
+        if w.is_file():
+            return str(w)
+    return sys.executable
+
+
 def daemon_argv(paths: ArbiterPaths) -> list[str]:
-    argv = [sys.executable, "-m", "arbiter_agent"]
+    argv = [daemon_python(), "-m", "arbiter_agent"]
     if paths.root is not None:
         argv += ["--home", str(paths.root)]  # WMI-launched processes don't inherit our environment
     for name in CLIENT_ENV_VARS:
