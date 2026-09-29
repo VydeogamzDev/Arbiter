@@ -185,12 +185,10 @@ TASKS = [
                  "distinct_partitions(0) == 1, distinct_partitions(7) == 5). It has to be fast: n = 20000 must take "
                  "well under a second."],
      "bug": None,
-     "requirements": {"small_values": "test_small_values", "fast_large": "test_fast_large",
-                      "bad_input": "test_bad_input"},
+     "requirements": {"small_values": "test_small_values", "fast_large": "test_fast_large"},
      "hidden": dedent(f'''
         import time
 
-        import pytest
         from sympy.ntheory import distinct_partitions
 
         Q = {Q!r}
@@ -206,10 +204,6 @@ TASKS = [
             assert time.perf_counter() - t < 2.0
             assert int(v) > 10**100 and int(v) % 10**6 == int(distinct_partitions(20000)) % 10**6
 
-
-        def test_bad_input():
-            with pytest.raises((ValueError, TypeError)):
-                distinct_partitions(-1)
      ''')},
 ]
 

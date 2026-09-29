@@ -120,6 +120,7 @@ class SessionEngine:
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
         self._changed: dict[str, list[str]] = {}    # sid -> code files the session edited (related test runs)
         self._failed_turns: dict[str, tuple[int, int]] = {}   # sid -> (goal epoch, turns ended with failing tests)
+        self._asked_tests: dict[str, int] = {}      # sid -> goal epoch in which the agent was asked to run tests
         self._known: dict[str, set[str]] = {}       # sid -> files (and pack blocks) already in the conversation
         self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
         self._models_file = Path(db).parent / "models.json"   # client -> last model, kept across restarts
@@ -763,6 +764,10 @@ class SessionEngine:
                 tested = self._verify_turn(sid, deadline)
                 if tested is not None and tested.result.status == "fail":
                     return self._failed_turn(sid, st, tested, mode, max_blocks)
+                if tested is None and mode == "block" and int(st["stop_blocks"]) < max_blocks:
+                    asked = self._ask_for_tests(sid, st)
+                    if asked:
+                        return asked
             fc = st["flags"].get("finish_check_ordinal")
             message = payload.get("last_assistant_message") or self._last_agent_response(sid)
             claim = claim_detection.classify(message,
@@ -845,6 +850,29 @@ class SessionEngine:
                                blocked=False, note=f"{model} -> {strong} after {n} failed turn(s)")
             self._notify(sid, "escalate", {"model": model, "to": strong, "failed_turns": n})
         return resp
+
+    def _ask_for_tests(self, sid: str, st: dict[str, Any]) -> dict[str, Any] | None:
+        """Code changed this turn but Arbiter's own run didn't finish within the stop hook's budget (Codex
+        gives a hook 5 s; a loaded machine ran sympy's related tests slower, and every such stop went
+        through unverified, hard_v1 2026-09-29): send the agent back once per goal epoch to run the related
+        tests itself. Its run is observed like any other and counts as evidence."""
+        changed = self._changed.get(sid)
+        root = self._repo_root(sid)
+        epoch = int(st["goal_epoch"] or 0)
+        if not changed or not root or self._asked_tests.get(sid) == epoch:
+            return None
+        try:
+            command = self.auto_tester.command(Path(root), changed)
+        except Exception:
+            command = None
+        if not command:
+            return None
+        self._asked_tests[sid] = epoch
+        reason = (f"[Arbiter] You changed code this turn and no test result covers it yet. Run `{command}` and "
+                  "fix any failure before you finish.")
+        self.record_ledger(sid, None, trigger="stop_hook", claim="changed_turn", verdict="unverified", mode="block",
+                           blocked=True, note="asked the agent to run the related tests")
+        return {"decision": "block", "reason": reason}
 
     def _is_cheap(self, model: str) -> bool:
         import fnmatch

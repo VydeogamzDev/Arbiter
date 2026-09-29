@@ -200,3 +200,18 @@ def test_routing_tests_every_changed_turn_and_escalates():
         _write_tool(h, "calc.py", CALC_OK)
         assert "decision" not in h.stop("Fixed.")
 
+
+
+def test_routing_asks_the_agent_to_run_tests_when_arbiter_cant_in_time():
+    cfg = {**_cfg(gate_mode="block", auto_test_budget_s=0.0),
+           "routing": {"enabled": True, "cheap_models": ["*"], "stop_test_budget_s": 0.0}}
+    with Harness(config=cfg) as h:
+        _repo(h)
+        h.prompt("Fix the addition bug in calc.py.")
+        h.baseline()
+        _write_tool(h, "calc.py", CALC_OK + "\n")
+        r = h.stop("I changed calc.py.")
+        assert r.get("decision") == "block" and "no test result covers it yet" in r["reason"]
+        assert "-m pytest" in r["reason"]
+        r = h.stop("I changed calc.py.")                         # asked once per task
+        assert "no test result covers it yet" not in str(r)

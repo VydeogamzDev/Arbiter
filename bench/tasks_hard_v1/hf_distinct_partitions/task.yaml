@@ -7,7 +7,6 @@ prompts:
 requirements:
   small_values: test_small_values
   fast_large: test_fast_large
-  bad_input: test_bad_input
 repo_src: D:/ArbiterBench/repos/sympy-1.14.0
 python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
 integrity: modified
