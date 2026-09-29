@@ -71,7 +71,8 @@ def _working_changes(root: str, base: str | None) -> list[Any] | None:
     def git(*args: str) -> str | None:
         try:
             r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=10,
-                               encoding="utf-8", errors="replace")
+                               encoding="utf-8", errors="replace",
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.SubprocessError):
             return None
         return r.stdout if r.returncode == 0 else None

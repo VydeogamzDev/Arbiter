@@ -332,3 +332,11 @@ resumed with `codex exec resume`; 3 reps, 30 sessions per repo, no leaks into th
 No stop blocks, tampering or false "done" claims. Smaller than Pi's -31% on the same repos because
 Codex re-sends ~15k tokens of fixed context with every request. The date-fns runs include 41b617b
 (vitest load failures, related-run coverage); the Pi date-fns run did not.
+
+## Tried and dropped (2026-09-28): predict-ahead attachments
+
+Usage lists for named symbols, the target's own test file, the changed region after each edit and a
+Ponytail-style write-less note (120 paid Pi/Codex sessions on sympy and date-fns): the targeted
+lookups went away but requests didn't (Pi sympy 202 -> 199), and the bigger pack cost more. Every
+cell was equal or worse than the plain pack (Pi date-fns -31% -> -24%, Codex date-fns -20% -> -11%).
+Reverted.
