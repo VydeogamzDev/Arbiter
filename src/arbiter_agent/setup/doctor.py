@@ -29,7 +29,7 @@ def mcp_round_trip(command: list[str], timeout: float = 15.0) -> dict[str, Any]:
     t = time.perf_counter()
     try:
         p = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             text=True, encoding="utf-8")
+                             text=True, encoding="utf-8", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as exc:
         return {"ok": False, "error": f"can't start {command[0]}: {exc}"}
     try:

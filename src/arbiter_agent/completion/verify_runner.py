@@ -121,7 +121,8 @@ def run_one(cmd: VerifyCommand, root: str | Path, extra_env: dict[str, str] | No
     timed_out = False
     try:
         proc = subprocess.run(argv, shell=use_shell, cwd=str(root), capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=cmd.timeout_s, env=env)
+                              encoding="utf-8", errors="replace", timeout=cmd.timeout_s, env=env,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         code: int | None = proc.returncode
         output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     except subprocess.TimeoutExpired as exc:

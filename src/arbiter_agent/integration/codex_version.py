@@ -37,7 +37,8 @@ def codex_version(env: ClientEnv) -> dict[str, str | None]:
     b = find_codex_binary(env)
     if b is not None:
         try:
-            r = subprocess.run([str(b), "--version"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run([str(b), "--version"], capture_output=True, text=True, timeout=10,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             out["binary_version"] = r.stdout.strip() or None
         except (OSError, subprocess.TimeoutExpired):
             pass

@@ -59,7 +59,8 @@ class Upstream:
         env = {**os.environ, **self.spec.env}
         self._proc = subprocess.Popen([self.spec.command, *self.spec.args], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                                      encoding="utf-8", env=env, cwd=self.spec.cwd, bufsize=1)
+                                      encoding="utf-8", env=env, cwd=self.spec.cwd, bufsize=1,
+                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self._request("initialize", {"protocolVersion": PROTOCOL, "capabilities": {},
                                      "clientInfo": {"name": "arbiter-gateway", "version": "1"}})
         self._notify("notifications/initialized")

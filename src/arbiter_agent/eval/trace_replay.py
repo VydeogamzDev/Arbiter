@@ -202,7 +202,8 @@ def git_init(repo: Path) -> bool:
                GIT_COMMITTER_NAME="arbiter", GIT_COMMITTER_EMAIL="arbiter@example.invalid")
     try:
         for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "base", "--allow-empty"]):
-            subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env, timeout=30)
+            subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return True
     except (OSError, subprocess.SubprocessError):
         return False
