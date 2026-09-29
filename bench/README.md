@@ -406,7 +406,7 @@ at medium effort, 3 reps, priced at API rates:
 
 | suite | luna-first + verification | gpt-6-sol / high | gpt-6-luna, `full` |
 |---|---|---|---|
-| hard_v1 (planted bugs + a fast algorithm) | 24/24, $0.0041/session | 21/24, $0.129 | 21/23, $0.0039 |
+| hard_v1 (planted bugs + a fast algorithm) | 24/24, $0.0041/session | 24/24, $0.129 | 21/23, $0.0039 |
 | realrepo_v1 (sympy) | 14/15, $0.0057 | 12/15, $0.231 | 15/15, $0.0049 |
 | realrepo_js_v1 (date-fns) | 15/15, $0.0055 | 15/15, $0.347 | 15/15, $0.0050 |
 
