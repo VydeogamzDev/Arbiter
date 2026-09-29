@@ -179,3 +179,24 @@ def test_detect_command_uses_the_project_virtualenv(tmp_path):
     venv_py.parent.mkdir(parents=True)
     venv_py.write_text("")
     assert detect_command(tmp_path) == f"{venv_py} -m pytest -q"
+
+
+def test_routing_tests_every_changed_turn_and_escalates():
+    """routing.enabled: a turn that changed code is tested at stop even when the last message isn't a
+    completion claim; failures send the agent back, and the second one on a cheap model suggests the
+    strong model."""
+    cfg = {**_cfg(gate_mode="block"), "routing": {"enabled": True, "cheap_models": ["*"],
+                                                  "escalate_after_failed_turns": 2, "stop_test_budget_s": 20.0}}
+    with Harness(config=cfg) as h:
+        _repo(h)
+        h.prompt("Fix the addition bug in calc.py.")
+        h.baseline()
+        _write_tool(h, "calc.py", CALC_BAD + "\n")
+        r = h.stop("I changed calc.py.")                         # no claim, still tested
+        assert r.get("decision") == "block" and "FAIL" in r["reason"] and "systemMessage" not in r
+        _write_tool(h, "calc.py", CALC_BAD + "\n\n")
+        r = h.stop("Changed it again.")
+        assert r.get("decision") == "block" and "Switching this thread to gpt-6-sol" in r["systemMessage"]
+        _write_tool(h, "calc.py", CALC_OK)
+        assert "decision" not in h.stop("Fixed.")
+

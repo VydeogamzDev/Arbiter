@@ -152,6 +152,13 @@ retrieval:
   auto_context_client_deadline_ms: # per client, where the host allows a longer hook (Pi has no hook timeout)
     pi: 6000
 
+routing:                      # cheap model first (opt-in): every code-changing turn is tested at stop; a failure
+  enabled: false              # sends the agent back, and repeated failures on a cheap model suggest the strong one
+  cheap_models: ["*luna*", "*mini*", "*haiku*"]
+  strong_model: gpt-6-sol
+  escalate_after_failed_turns: 2
+  stop_test_budget_s: 4.0
+
 review:
   security_floor: high
   database_migration_floor: high

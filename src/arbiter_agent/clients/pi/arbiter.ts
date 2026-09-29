@@ -141,6 +141,13 @@ export default function (pi: any) {
     // stop_seq keeps a repeated identical claim from being dropped as a duplicate delivery.
     const out = await send("Stop", ctx, { last_assistant_message: last, stop_hook_active: stopBlocks > 0,
       stop_seq: stopBlocks });
+    // Routing (routing.enabled): tests kept failing on a cheap model, so the rest of the task runs on the
+    // strong one. Pi, unlike Codex, lets an extension switch the session's model.
+    const escalate = out?.arbiterRouting?.model;
+    if (typeof escalate === "string" && ctx.model?.id !== escalate) {
+      const strong = ctx.modelRegistry?.find?.(ctx.model?.provider ?? "", escalate);
+      if (strong) await pi.setModel(strong);
+    }
     // (context.canContinue describes the context before these entries: false after an assistant reply.)
     if (out?.decision === "block" && stopBlocks < MAX_STOP_BLOCKS) {
       stopBlocks += 1;

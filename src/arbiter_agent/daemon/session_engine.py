@@ -119,6 +119,7 @@ class SessionEngine:
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
         self._changed: dict[str, list[str]] = {}    # sid -> code files the session edited (related test runs)
+        self._failed_turns: dict[str, tuple[int, int]] = {}   # sid -> (goal epoch, turns ended with failing tests)
         self._known: dict[str, set[str]] = {}       # sid -> files (and pack blocks) already in the conversation
         self._models: dict[str, str] = {}           # sid -> model (hook payload or transcript)
         self._models_file = Path(db).parent / "models.json"   # client -> last model, kept across restarts
@@ -758,6 +759,10 @@ class SessionEngine:
             mode = str(st["flags"].get("gate_mode") or mode)
             if not can_block:
                 mode = "annotate"       # this client can't hold back a stop (e.g. Cursor): record only
+            if self.config.get("routing.enabled", False):
+                tested = self._verify_turn(sid, deadline)
+                if tested is not None and tested.result.status == "fail":
+                    return self._failed_turn(sid, st, tested, mode, max_blocks)
             fc = st["flags"].get("finish_check_ordinal")
             message = payload.get("last_assistant_message") or self._last_agent_response(sid)
             claim = claim_detection.classify(message,
@@ -790,6 +795,62 @@ class SessionEngine:
             return {}
         finally:
             self.breakers.hook_latency.record_latency((time.monotonic() - t0) * 1000.0)
+
+    # ------------------------------------------------------------------ routing (cheap model first)
+    def _verify_turn(self, sid: str, deadline: Deadline) -> Any:
+        """Every turn that changed code is checked at stop, whatever the agent's last message says: the
+        claim-only gate let a cheap model finish with untested, wrong fixes (hard_v1, 2026-09-29: two of
+        gpt-6-luna's three failures had no test run at all). The related tests of the changed files, reused
+        if a run for the current files is done, else run within the stop budget."""
+        changed = self._changed.get(sid)
+        if not changed or self.auto_tester.mode() == "off":
+            return None
+        root = self._repo_root(sid)
+        if not root:
+            return None
+        budget = min(float(self.config.get("routing.stop_test_budget_s", 4.0)), deadline.remaining() - 0.4)
+        out = self.auto_tester.run(root, max(0.0, budget), at_stop=True, changed=changed)
+        if out is None:
+            return None
+        self._record_auto_test(sid, out)
+        if out.result.status == "pass":
+            self._changed[sid] = []
+        return out
+
+    def _failed_turn(self, sid: str, st: dict[str, Any], tested: Any, mode: str, max_blocks: int) -> dict[str, Any]:
+        """A turn ended with failing tests: send the agent back (block mode, within the epoch's limit), and
+        after ``routing.escalate_after_failed_turns`` such turns on a cheap model, tell the user to switch
+        the thread to the strong model (Codex hooks can't change a turn's model; Pi's extension can)."""
+        epoch = int(st["goal_epoch"] or 0)
+        prev_epoch, n = self._failed_turns.get(sid, (epoch, 0))
+        n = (n if prev_epoch == epoch else 0) + 1
+        self._failed_turns[sid] = (epoch, n)
+        blocked = mode == "block" and int(st["stop_blocks"]) < max_blocks
+        resp: dict[str, Any] = {}
+        if blocked:
+            resp = {"decision": "block", "reason": f"{tested.summary()} Fix the failing tests before you finish."}
+        self.record_ledger(sid, None, trigger="stop_hook", claim="changed_turn", verdict="unverified", mode=mode,
+                           blocked=blocked, note=tested.summary())
+        client = sid.split(":", 1)[0]
+        model = self._session_model(client, sid) or self._last_model.get(client) or ""
+        cheap = self._is_cheap(model)
+        if cheap and (n >= int(self.config.get("routing.escalate_after_failed_turns", 2)) or not blocked):
+            strong = str(self.config.get("routing.strong_model", "gpt-6-sol"))
+            resp["systemMessage"] = (f"Arbiter: the tests still fail after {n} attempt(s) by {model}. Switching this "
+                                     f"thread to {strong} is likely cheaper than more retries.")
+            if client == "pi":
+                resp["arbiterRouting"] = {"model": strong}
+            self.stats["escalations"] = self.stats.get("escalations", 0) + 1
+            self.record_ledger(sid, None, trigger="routing", claim="escalate", verdict="escalate", mode=mode,
+                               blocked=False, note=f"{model} -> {strong} after {n} failed turn(s)")
+            self._notify(sid, "escalate", {"model": model, "to": strong, "failed_turns": n})
+        return resp
+
+    def _is_cheap(self, model: str) -> bool:
+        import fnmatch
+
+        return any(fnmatch.fnmatch(model.lower(), str(p).lower())
+                   for p in self.config.get("routing.cheap_models") or [])
 
     def _change_seq(self, sid: str) -> int:
         rc = self._read()

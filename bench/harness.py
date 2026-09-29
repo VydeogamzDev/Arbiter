@@ -340,13 +340,31 @@ def codex_bench_home() -> Path | None:
     return home
 
 
+def escalations(arb: ArbiterRun | None) -> int:
+    """Routing escalations Arbiter has recorded in this run (finish ledger rows, trigger ``routing``)."""
+    if arb is None:
+        return 0
+    db = arb.paths.db
+    if not db.is_file():
+        return 0
+    import sqlite3
+
+    try:
+        c = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        try:
+            return int(c.execute("SELECT count(*) FROM finish_ledger WHERE trigger = 'routing'").fetchone()[0])
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return 0
+
+
 def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | None,
               args: argparse.Namespace) -> dict[str, Any]:
     from arbiter_agent.clients.client_env import arbiter_command
 
     home = codex_bench_home()
-    flags = ["--ignore-user-config", "--json", "-m", args.model, "--dangerously-bypass-approvals-and-sandbox",
-             "--skip-git-repo-check", *(["-c", f'model_reasoning_effort="{args.effort}"'] if args.effort else [])]
+    flags = ["--ignore-user-config", "--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"]
     if home is None:
         flags.append("--ephemeral")
     if arb and arb.cond.uses_arbiter:
@@ -364,9 +382,16 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
     turns: list[dict[str, Any]] = []
     messages: list[str] = []
     thread: str | None = None
-    for i, prompt in enumerate(task["prompts"]):
-        argv = ([CODEX, "exec", *flags, "-C", str(ws), prompt] if i == 0
-                else [CODEX, "exec", "resume", *flags, str(thread), prompt])
+    model, effort = args.model, args.effort
+    escalate = getattr(args, "escalate_model", None)
+    seen = escalations(arb)
+    prompts = list(task["prompts"])
+    i = 0
+    while i < len(prompts):
+        prompt = prompts[i]
+        mflags = ["-m", model, *(["-c", f'model_reasoning_effort="{effort}"'] if effort else [])]
+        argv = ([CODEX, "exec", *flags, *mflags, "-C", str(ws), prompt] if i == 0
+                else [CODEX, "exec", "resume", *flags, *mflags, str(thread), prompt])
         t0 = time.monotonic()
         try:
             proc = subprocess.run(argv, cwd=ws, env=env, capture_output=True, text=True, encoding="utf-8",
@@ -405,9 +430,19 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
         if turns and all(usage[k] >= turns[-1]["thread_usage"][k] for k in usage):
             usage = {k: usage[k] - turns[-1]["thread_usage"][k] for k in usage}
         turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:],
-                      "usage": usage, "thread_usage": thread_usage, "tools": tools, "errors": errors})
+                      "usage": usage, "thread_usage": thread_usage, "tools": tools, "errors": errors,
+                      "model": model, "effort": effort})
         if code is None or not thread:
             break
+        # The user, told by Arbiter that the cheap model keeps failing, switches the thread to the strong
+        # model and asks it to carry on; the rest of the session stays there (--escalate-model).
+        now = escalations(arb)
+        if escalate and model != escalate and now > seen:
+            seen = now
+            model, effort = escalate, getattr(args, "escalate_effort", None) or effort
+            prompts.insert(i + 1, "Arbiter reports the tests still fail after the last change. Please keep going "
+                                  "until the task is done and the tests pass.")
+        i += 1
     tot = {k: sum(t["usage"][k] for t in turns) for k in turns[0]["usage"]}
     uncached = tot["input_tokens"] - tot["cached_input_tokens"]
     index = uncached + CODEX_CACHED_RATIO * tot["cached_input_tokens"] + CODEX_OUTPUT_RATIO * tot["output_tokens"]
@@ -789,6 +824,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--suite", default="dev", choices=sorted(SUITES))
     r.add_argument("--effort", choices=["low", "medium", "high", "xhigh", "max"],
                    help="claude --effort for every run (default: the CLI default)")
+    r.add_argument("--escalate-model", help="codex: when Arbiter recommends escalating (routing), continue "
+                                            "the thread on this model, as a user would")
+    r.add_argument("--escalate-effort", choices=["low", "medium", "high", "xhigh"])
     r.add_argument("--reps", type=int, default=1)
     r.add_argument("--jobs", type=int, default=2)
     r.add_argument("--model", default=None, help=f"default {MODEL} (claude) / {CODEX_MODEL} (codex, pi)")

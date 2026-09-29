@@ -75,7 +75,11 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
                             "call)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_APPLY_PATCH", "1"),)),
-    Condition("full_cxslim", "full, plus Codex features coding doesn't use switched off (apps, plugins, tool "
+    Condition("full_route", "full, plus routing: every code-changing turn tested at stop, failures sent back, "
+                            "repeated failures on a cheap model escalate (with --escalate-model the harness switches "
+                            "the thread, as the user would)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, config=_merge(BLOCK, CONTEXT, {"routing": {"enabled": True}})),
+    Condition("full_cxslim","full, plus Codex features coding doesn't use switched off (apps, plugins, tool "
                              "suggestions, browser, computer use, image generation, sleep, goals): -17% fixed prefix",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               codex_config=tuple(f"features.{f}=false" for f in (
