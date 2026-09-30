@@ -94,7 +94,9 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
     Condition("full_handoff", "full, plus a fresh thread when system 1 calls a prompt a new, unrelated task (the user "
                               "following Arbiter's advice)",
               hooks=ALL_HOOKS, mcp=True, encoder=True, handoff=True, config=_merge(BLOCK, CONTEXT)),
-    Condition("full_brief", "full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
+    Condition("full_effort", "full, plus low/high effort per prompt by system 1 (no brief, no review)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, effort_router=True, config=_merge(BLOCK, CONTEXT)),
+    Condition("full_brief","full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "brief": True}})),
     Condition("full_judge", "full, plus a system-1 review of the diff at stop", hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "judge": True}})),
