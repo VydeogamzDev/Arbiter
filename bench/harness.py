@@ -412,16 +412,24 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
     seen = escalations(arb)
     prompts = list(task["prompts"])
     thread_prompts: list[str] = []
+    thread_effort: str | None = None
     handoffs = 0
     i = 0
     while i < len(prompts):
         prompt = prompts[i]
         if arb and arb.cond.handoff and thread and i > 0 and thread_prompts and is_new_task(thread_prompts, prompt):
-            thread, thread_prompts = None, []                     # the user opens a fresh thread for it
+            thread, thread_prompts, thread_effort = None, [], None     # the user opens a fresh thread for it
             handoffs += 1
         turn_effort = effort
         if arb and arb.cond.effort_router and model != escalate:
-            turn_effort = routed_effort(prompt, effort)
+            if arb.cond.effort_scope == "thread":
+                # Decided at a thread's first prompt and kept: the provider caches a prompt per reasoning
+                # effort, so a mid-thread change re-bills the history uncached (measured 2026-09-30).
+                if thread is None or thread_effort is None:
+                    thread_effort = routed_effort(prompt, effort)
+                turn_effort = thread_effort
+            else:
+                turn_effort = routed_effort(prompt, effort)
         mflags = ["-m", model, *(["-c", f'model_reasoning_effort="{turn_effort}"'] if turn_effort else [])]
         argv = ([CODEX, "exec", *flags, *mflags, "-C", str(ws), prompt] if thread is None
                 else [CODEX, "exec", "resume", *flags, *mflags, str(thread), prompt])

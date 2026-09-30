@@ -29,6 +29,7 @@ class Condition:
     workspace_files: tuple[tuple[str, str], ...] = ()   # (path, text) written into the workspace, git-excluded
     effort_router: bool = False                   # codex: system 1 picks low/high effort per prompt (user applies it)
     handoff: bool = False                         # codex: a prompt system 1 calls a new task starts a fresh thread
+    effort_scope: str = "prompt"                  # effort_router: per "prompt", or per "thread" (decided at its start)
 
     @property
     def uses_arbiter(self) -> bool:
@@ -96,7 +97,11 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
               hooks=ALL_HOOKS, mcp=True, encoder=True, handoff=True, config=_merge(BLOCK, CONTEXT)),
     Condition("full_effort", "full, plus low/high effort per prompt by system 1 (no brief, no review)",
               hooks=ALL_HOOKS, mcp=True, encoder=True, effort_router=True, config=_merge(BLOCK, CONTEXT)),
-    Condition("full_brief","full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
+    Condition("full_effort_thread", "full, plus low/high effort chosen by system 1 at a thread's first prompt and kept "
+                                    "for the thread (the provider caches a prompt per effort)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, effort_router=True, effort_scope="thread",
+              config=_merge(BLOCK, CONTEXT)),
+    Condition("full_brief", "full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "brief": True}})),
     Condition("full_judge", "full, plus a system-1 review of the diff at stop", hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "judge": True}})),
