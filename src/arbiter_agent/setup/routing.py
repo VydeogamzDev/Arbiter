@@ -48,12 +48,31 @@ def load_record(paths: ArbiterPaths) -> dict[str, Any] | None:
         return None
 
 
-def _set_arbiter(paths: ArbiterPaths, enabled: bool, escalate: str | None = None) -> None:
+def codex_binary() -> str | None:
+    """``codex`` on PATH, else the newest one the Codex desktop app bundles (%LOCALAPPDATA%/OpenAI/Codex/bin)."""
+    import os
+
+    found = shutil.which("codex")
+    if found:
+        return found
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "OpenAI" / "Codex" / "bin"
+    cands = sorted(base.glob("*/codex.exe"), key=lambda q: q.stat().st_mtime, reverse=True) if base.is_dir() else []
+    return str(cands[0]) if cands else None
+
+
+def _set_arbiter(paths: ArbiterPaths, enabled: bool, escalate: str | None = None,
+                 effort_advice: str | None = None) -> None:
     cfg = paths.config_file
     data = (yaml.safe_load(cfg.read_text(encoding="utf-8")) if cfg.exists() else None) or {}
     data.setdefault("routing", {})["enabled"] = enabled
     if escalate:
         data["routing"]["escalate"] = escalate
+    s1 = data.setdefault("system1", {})
+    if effort_advice:
+        # A cheap model (gpt-6-luna through the user's own Codex sign-in) calls each thread's effort.
+        s1.update({"backend": "codex", "effort_advice": True, "codex_bin": effort_advice})
+    elif not enabled and s1.get("effort_advice"):
+        s1["effort_advice"] = False
     cfg.parent.mkdir(parents=True, exist_ok=True)
     write_private(cfg, yaml.safe_dump(data, sort_keys=False).encode())
 
@@ -112,9 +131,15 @@ def enable(paths: ArbiterPaths, *, codex_default: bool = False, codex_effort: st
         before = top_level(text)
         for k, v in values.items():
             lines.append(f"Codex ({target}): {k} {before.get(k, '(unset)')} -> {v}")
+    advice_bin = codex_binary() if codex_effort else None
+    if codex_effort:
+        lines.append("Effort advice: at each thread's first prompt a cheap model (gpt-6-luna, your Codex sign-in, a "
+                     "fraction of a cent) calls the effort it needs; a hard task gets a message to raise the thread's "
+                     "effort before there's history to re-read." if advice_bin else
+                     "Effort advice: off (no codex executable found)")
     if dry_run:
         return "\n".join(lines + ["(dry run: nothing written)"])
-    _set_arbiter(paths, True, escalate)
+    _set_arbiter(paths, True, escalate, advice_bin)
     rec: dict[str, Any] = {"at": time.time(), "codex": None}
     if target is not None:
         backup = None

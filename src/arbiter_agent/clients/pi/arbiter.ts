@@ -102,6 +102,10 @@ export default function (pi: any) {
     prompts += 1;
     stopBlocks = 0;
     const out = await send("UserPromptSubmit", ctx, { prompt: event.prompt });
+    // Effort per thread (system1.effort_advice): set before the first request, since the provider caches a
+    // prompt per reasoning level and a later change re-reads the history uncached.
+    const thinking = out?.arbiterRouting?.thinking;
+    if ((thinking === "low" || thinking === "high") && typeof pi.setThinkingLevel === "function") pi.setThinkingLevel(thinking);
     const guides = event.systemPromptOptions?.promptGuidelines;
     if (target && Array.isArray(guides) && !guides.includes(BATCH_GUIDELINE)) guides.push(BATCH_GUIDELINE);
     else if (target && event.systemPromptOptions && !guides) event.systemPromptOptions.promptGuidelines = [BATCH_GUIDELINE];

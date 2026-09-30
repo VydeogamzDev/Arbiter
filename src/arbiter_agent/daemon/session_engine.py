@@ -123,6 +123,7 @@ class SessionEngine:
         self._briefs: dict[str, tuple[int, Any]] = {}      # sid -> (goal epoch, future of the brief text)
         self._judges: dict[str, tuple[str, Any]] = {}      # sid -> (repo fingerprint, future of the problems)
         self._judged: dict[str, int] = {}                  # sid -> goal epoch whose stop a review sent back
+        self._effort_advice: dict[str, Any] = {}           # sid -> future of system 1's low/high call (first prompt)
         self.auto_tester = AutoTester(config)   # completion.auto_test: Arbiter runs the tests itself
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
@@ -1057,6 +1058,62 @@ class SessionEngine:
         self.stats["system1_review_blocks"] = self.stats.get("system1_review_blocks", 0) + 1
         return {"decision": "block", "reason": reason}
 
+    # ------------------------------------------------------------------ effort advice (per thread)
+    def _first_prompt_effort(self, sid: str, event_name: str, deadline: Deadline) -> dict[str, Any] | None:
+        """At a thread's first prompt, system 1 calls the effort it needs (``system1.effort_advice``). The
+        provider caches a prompt per reasoning effort (2026-09-30: after a low -> high change the history
+        was served uncached), so the effort is settled once, at the start, when there's no history yet.
+        Pi's extension applies it before the first request; other hosts get a message (next hook)."""
+        if event_name != "UserPromptSubmit" or not self.config.get("system1.effort_advice", False):
+            return None
+        if not self.system1.enabled or sid in self._effort_advice:
+            return None
+        self.catch_up(deadline.sub(0.5))          # the prompt itself must be recorded to know it's the first
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+            first = intent_log.load_intents(rc, sid, 0)[:1] if st else []
+        finally:
+            rc.close()
+        if not st or int(st["intent_count"] or 0) != 1 or not first:
+            return None
+        text = first[0].text[:3000]
+
+        def job() -> str | None:
+            from arbiter_agent.system1 import EFFORT_PROMPT, parse_effort, write_debug
+
+            prompt = EFFORT_PROMPT.format(request=text)
+            answer = self.system1.complete(prompt, max_tokens=5)
+            write_debug(self._s1_debug(), "effort", prompt, answer)
+            return parse_effort(answer)
+
+        fut = self._s1_submit(job)
+        self._effort_advice[sid] = fut
+        if sid.split(":", 1)[0] != "pi":
+            return None
+        try:                                  # Pi can wait: it sets the level before the agent's first request
+            verdict = fut.result(timeout=max(0.0, min(5.0, deadline.remaining() - 0.6)))
+        except Exception:
+            return None
+        self._effort_advice[sid] = None       # applied here, not announced later
+        return {"arbiterRouting": {"thinking": verdict}} if verdict in ("low", "high") else None
+
+    def _take_effort_advice(self, sid: str) -> str | None:
+        fut = self._effort_advice.get(sid)
+        if fut is None or not fut.done():
+            return None
+        self._effort_advice[sid] = None
+        try:
+            verdict = fut.result(timeout=0)
+        except Exception:
+            return None
+        if verdict != "high":
+            return None
+        self.stats["effort_advice_high"] = self.stats.get("effort_advice_high", 0) + 1
+        return ("Arbiter: this task looks like it needs high reasoning effort (an unexplained failure, a design "
+                "choice, or a performance requirement). Raise this thread's effort now: changing it later re-reads "
+                "the whole conversation at the uncached price.")
+
     def _is_cheap(self, model: str) -> bool:
         import fnmatch
 
@@ -1138,6 +1195,13 @@ class SessionEngine:
     def on_prompt_hook(self, sid: str, event_name: str, deadline: Deadline) -> dict[str, Any]:
         """Optional status injection (``ui.inject_status``; default off) and bounded auto-context
         (``retrieval.auto_context``, M10.4) for prompts that start a new task."""
+        routing = self._first_prompt_effort(sid, event_name, deadline)
+        out = self._prompt_hook_body(sid, event_name, deadline)
+        if routing:
+            out = {**out, **routing}
+        return out
+
+    def _prompt_hook_body(self, sid: str, event_name: str, deadline: Deadline) -> dict[str, Any]:
         want_status = bool(self.config.get("ui.inject_status", False)) and self.enabled("status_injection")
         want_context = bool(self.config.get("retrieval.auto_context", False)) and self.enabled("retrieval_reranker") \
             and self.context_provider is not None and event_name == "UserPromptSubmit"
@@ -1374,7 +1438,9 @@ class SessionEngine:
             parts.append(tested)
         if self.config.get("system1.judge", False) and str(payload.get("tool_name") or "").lower() in facts.EDIT_TOOLS:
             self._start_judge(sid)
-        return ui_status.hook_context(name, "\n".join(parts)) if parts else {}
+        out = ui_status.hook_context(name, "\n".join(parts)) if parts else {}
+        advice = self._take_effort_advice(sid)
+        return {**out, "systemMessage": advice} if advice else out
 
     def _note_known(self, sid: str, payload: dict[str, Any]) -> None:
         """Files the agent read or edited are in its context: a follow-up prompt's pack leaves them out."""

@@ -106,3 +106,25 @@ def test_brief_arrives_at_the_next_tool_hook():
                 break
             time.sleep(0.2)
         assert "calc.py:add (line 1)" in str(out)
+
+
+def test_effort_advice_once_per_thread_codex_message_and_pi_level():
+    with Harness(config=_cfg(system1={"effort_advice": True}), client="codex") as h:
+        h.engine.system1 = FakeS1({"How much reasoning effort": "high"})
+        _repo(h)
+        h.prompt("`prevprime(n)` sometimes skips a prime. Find the cause and fix it.")
+        deadline = time.monotonic() + 10
+        out = {}
+        while time.monotonic() < deadline and "systemMessage" not in out:
+            out = h.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": str(h.repo / "calc.py")},
+                                         "tool_response": {}, "tool_use_id": f"r-{time.time_ns()}"})
+            time.sleep(0.1)
+        assert "Raise this thread's effort now" in out.get("systemMessage", "")
+        n = len(h.engine.system1.prompts)
+        h.prompt("Also add a test for it.")                      # later prompts: no new call, no new message
+        assert len(h.engine.system1.prompts) == n
+    with Harness(config=_cfg(system1={"effort_advice": True}), client="pi") as h:
+        h.engine.system1 = FakeS1({"How much reasoning effort": "low"})
+        _repo(h)
+        r = h.prompt("Add a `words` option to `ordinal`.")
+        assert r.get("arbiterRouting") == {"thinking": "low"}
