@@ -1,0 +1,64 @@
+id: long_datefns
+category: long_session
+prompts:
+- 'Give `closestIndexTo` an options argument with a `direction` option: ''any'' (the default), ''before'' or ''after''.
+  With ''before'' only dates at or before the given date count; with ''after'', only dates at or after it.'
+- '`closestTo` should accept the same `direction` option.'
+- When no date qualifies for the direction, both should return undefined.
+- 'Add a `maxUnits` option to `formatDuration`: only the N largest units that would appear in the output are written
+  (default: no limit).'
+- Also add a `lastDelimiter` option to formatDuration, used between the last two units instead of `delimiter` (so
+  you can get "2 years, 9 months and 3 days").
+- 'And a `zeroText` option: what to return when nothing would be written (default: the empty string, as now).'
+- Add `roundToNearestSeconds(date, options)` next to `roundToNearestMinutes`, with the same `nearestTo` and `roundingMethod`
+  options (it rounds to seconds; milliseconds are what gets rounded away). Export it from the package index like
+  the other functions.
+- roundToNearestSeconds should return an Invalid Date when `nearestTo` is below 1 or above 30, the way roundToNearestMinutes
+  does.
+- 'Change of plan: for roundToNearestSeconds, allow any `nearestTo` from 1 to 59. roundToNearestMinutes keeps its
+  1-30 limit.'
+- 'Give `nextDay` an `includeSameDay` option: when the date already falls on the requested weekday, return that
+  date instead of the one a week later.'
+- Do the same for `previousDay`.
+- The weekday helpers (nextMonday ... nextSunday and previousMonday ... previousSunday) should accept `includeSameDay`
+  too.
+- 'Let `isWeekend` take a `weekendDays` option: the days of the week that count as the weekend (0 = Sunday ... 6
+  = Saturday). The default stays Saturday and Sunday; this is so Friday-Saturday weekends can be used.'
+- '`eachWeekendOfInterval` should honor the same `weekendDays` option.'
+- 'And `differenceInBusinessDays` too: days listed in `weekendDays` are not business days.'
+requirements:
+  index_default: index_default
+  index_before: index_before
+  index_after: index_after
+  closest_direction: closest_direction
+  none_qualifies: none_qualifies
+  max_units: max_units
+  max_units_zero: max_units_zero
+  last_delimiter: last_delimiter
+  single_unit: single_unit
+  zero_text: zero_text
+  default_unchanged: default_unchanged
+  rounds: rounds
+  rounding_method: rounding_method
+  nearest_to: nearest_to
+  invalid_range: invalid_range
+  wide_range: wide_range
+  minutes_unchanged: minutes_unchanged
+  next_same: next_same
+  next_default: next_default
+  previous_same: previous_same
+  helpers: helpers
+  weekend_default: weekend_default
+  weekend_option: weekend_option
+  each_weekend_option: each_weekend_option
+  each_weekend_default: each_weekend_default
+  business_days_option: business_days_option
+  business_days_default: business_days_default
+repo_src: D:/ArbiterBench/repos/date-fns-4.1.0
+link:
+  node_modules: D:/ArbiterBench/deps/date-fns/node_modules
+hidden_runner: vitest
+integrity: modified
+pre_index: true
+notes: 5 tasks of tasks_realrepo_js_v1 in one session (js_closest_direction, js_duration_units, js_round_seconds,
+  js_same_day, js_weekend_days)

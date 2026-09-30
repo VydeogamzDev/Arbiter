@@ -53,7 +53,8 @@ SUITES = {"dev": TASKS, "heldout_v1": BENCH / "tasks_heldout_v1",    # held-out/
           "quality_v1": BENCH / "tasks_quality_v1", "largerepo_v1": BENCH / "tasks_largerepo_v1",
           "realrepo_v1": BENCH / "tasks_realrepo_v1",     # sympy 1.14.0, 3-prompt sessions (make_realrepo_v1)
           "realrepo_js_v1": BENCH / "tasks_realrepo_js_v1",   # date-fns 4.1.0, written before any run on it
-          "hard_v1": BENCH / "tasks_hard_v1"}   # planted bugs + a fast-algorithm feature (routing)
+          "hard_v1": BENCH / "tasks_hard_v1",
+          "long_v1": BENCH / "tasks_long_v1"}   # planted bugs + a fast-algorithm feature (routing)
 DEFAULT_OUT = Path(os.environ.get("ARBITER_BENCH_OUT", "D:/ArbiterBench/runs"))
 DEFAULT_ENCODER = Path.home() / "Downloads" / "GLiNER2.5-Decide-onnx-w8e4"
 MODEL = "claude-opus-5-5"
@@ -352,6 +353,18 @@ def routed_effort(prompt: str, default: str | None) -> str | None:
     return "low" if verdict == "low" else default
 
 
+def is_new_task(earlier: list[str], prompt: str) -> bool:
+    """System 1's call: does the prompt start a new task unrelated to this thread's earlier ones?"""
+    from arbiter_agent.config.loader import build_config
+    from arbiter_agent.system1 import HANDOFF_PROMPT, System1, parse_handoff
+
+    s1 = System1(build_config({"system1": {"backend": "codex", "codex_bin": CODEX,
+                                           "codex_home": str(codex_bench_home() or "")}}))
+    listed = "\n".join(f"{j + 1}. {p[:400]}" for j, p in enumerate(earlier[-12:]))
+    return parse_handoff(s1.complete(HANDOFF_PROMPT.format(earlier=listed, request=prompt[:1500]), max_tokens=5,
+                                     timeout_s=60)) == "new"
+
+
 def escalations(arb: ArbiterRun | None) -> int:
     """Routing escalations Arbiter has recorded in this run (finish ledger rows, trigger ``routing``)."""
     if arb is None:
@@ -398,15 +411,21 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
     escalate = getattr(args, "escalate_model", None)
     seen = escalations(arb)
     prompts = list(task["prompts"])
+    thread_prompts: list[str] = []
+    handoffs = 0
     i = 0
     while i < len(prompts):
         prompt = prompts[i]
+        if arb and arb.cond.handoff and thread and i > 0 and thread_prompts and is_new_task(thread_prompts, prompt):
+            thread, thread_prompts = None, []                     # the user opens a fresh thread for it
+            handoffs += 1
         turn_effort = effort
         if arb and arb.cond.effort_router and model != escalate:
             turn_effort = routed_effort(prompt, effort)
         mflags = ["-m", model, *(["-c", f'model_reasoning_effort="{turn_effort}"'] if turn_effort else [])]
-        argv = ([CODEX, "exec", *flags, *mflags, "-C", str(ws), prompt] if i == 0
+        argv = ([CODEX, "exec", *flags, *mflags, "-C", str(ws), prompt] if thread is None
                 else [CODEX, "exec", "resume", *flags, *mflags, str(thread), prompt])
+        thread_prompts.append(prompt)
         t0 = time.monotonic()
         try:
             proc = subprocess.run(argv, cwd=ws, env=env, capture_output=True, text=True, encoding="utf-8",
@@ -442,11 +461,12 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
         # `codex exec resume` reports the thread's cumulative usage, not the turn's: summing turns counted
         # prompt 1 three times in a 3-prompt session (found 2026-09-28; codex runs before this doubled).
         thread_usage = dict(usage)
-        if turns and all(usage[k] >= turns[-1]["thread_usage"][k] for k in usage):
+        if turns and turns[-1].get("thread") == thread and all(usage[k] >= turns[-1]["thread_usage"][k]
+                                                                for k in usage):
             usage = {k: usage[k] - turns[-1]["thread_usage"][k] for k in usage}
         turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:],
                       "usage": usage, "thread_usage": thread_usage, "tools": tools, "errors": errors,
-                      "model": model, "effort": turn_effort})
+                      "model": model, "effort": turn_effort, "thread": thread})
         if code is None or not thread:
             break
         # The user, told by Arbiter that the cheap model keeps failing, switches the thread to the strong
@@ -465,7 +485,8 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
             "num_turns": sum(t["tools"] for t in turns), "agent_wall_s": round(sum(t["wall_s"] for t in turns), 1),
             "output_tokens": tot["output_tokens"], "reasoning_tokens": tot["reasoning_output_tokens"],
             "input_tokens": tot["input_tokens"], "cached_input_tokens": tot["cached_input_tokens"],
-            "thread_id": thread, "codex_home": str(home) if home else None, "permission_denials": 0,
+            "thread_id": thread, "handoffs": handoffs, "codex_home": str(home) if home else None,
+            "permission_denials": 0,
             "errors": sum(t["errors"] + (1 if t["exit"] != 0 else 0) for t in turns)}
 
 

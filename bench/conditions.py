@@ -28,6 +28,7 @@ class Condition:
     codex_config: tuple[str, ...] = ()            # extra `codex exec -c key=value` settings
     workspace_files: tuple[tuple[str, str], ...] = ()   # (path, text) written into the workspace, git-excluded
     effort_router: bool = False                   # codex: system 1 picks low/high effort per prompt (user applies it)
+    handoff: bool = False                         # codex: a prompt system 1 calls a new task starts a fresh thread
 
     @property
     def uses_arbiter(self) -> bool:
@@ -87,6 +88,12 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
                          "low/high effort per prompt",
               hooks=ALL_HOOKS, mcp=True, encoder=True, effort_router=True,
               config=_merge(BLOCK, CONTEXT, TRUST, {"system1": {**S1, "brief": True, "judge": True}})),
+    Condition("full_compact", "full, plus Codex's auto-compaction at 60k tokens of context (long sessions)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, config=_merge(BLOCK, CONTEXT),
+              codex_config=("model_auto_compact_token_limit=60000",)),
+    Condition("full_handoff", "full, plus a fresh thread when system 1 calls a prompt a new, unrelated task (the user "
+                              "following Arbiter's advice)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, handoff=True, config=_merge(BLOCK, CONTEXT)),
     Condition("full_brief", "full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
               config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "brief": True}})),
     Condition("full_judge", "full, plus a system-1 review of the diff at stop", hooks=ALL_HOOKS, mcp=True, encoder=True,

@@ -147,6 +147,26 @@ REQUEST:
 """
 
 
+HANDOFF_PROMPT = """A user is working with a coding agent in one conversation. Below are the user's earlier requests
+in this conversation and the new one. Does the new request continue earlier work (refers to it, changes it, extends
+it, "do the same for", "change of plan") or is it a new, unrelated task that a fresh conversation could do without
+the earlier history? Answer with one word: `continue` or `new`.
+
+EARLIER REQUESTS:
+{earlier}
+
+NEW REQUEST:
+{request}
+"""
+
+
+def parse_handoff(text: str | None) -> str | None:
+    if not text:
+        return None
+    w = text.strip().lower()
+    return "new" if w.startswith("new") else "continue" if w.startswith("continue") else None
+
+
 def parse_judge(text: str | None) -> list[str] | None:
     """The judge's problems, [] for OK, None when there's no usable answer."""
     if not text:

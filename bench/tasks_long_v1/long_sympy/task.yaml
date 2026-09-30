@@ -1,0 +1,63 @@
+id: long_sympy
+category: long_session
+prompts:
+- 'Add a `digital_root(n, b=10)` function to sympy''s number theory package: repeatedly sum the base-b digits of
+  n until a single digit is left (digital_root(0) == 0). It should be importable with `from sympy.ntheory import
+  digital_root`.'
+- digital_root should keep the sign of n (digital_root(-38) == -2), and reject bases below 2 with the same ValueError
+  that `digits` raises.
+- 'Also add `multiplicative_digital_root(n, b=10)` beside it: repeatedly multiply the base-b digits until one digit
+  is left, keeping the sign the same way, and export it the same way.'
+- 'Make `len()` work on SymPy''s IntegerPartition: it should give the number of parts.'
+- 'Add an `is_self_conjugate` property to IntegerPartition: True when the partition equals its conjugate.'
+- 'Extend `IntegerPartition.as_ferrers`: add a `sep` argument (default a newline) placed between the rows, and raise
+  ValueError if `char` is an empty string.'
+- 'Give `common_prefix` and `common_suffix` (sympy.utilities.iterables) a keyword-only `key` argument: two elements
+  match when key(a) == key(b). The result is still a slice of the first sequence, and without `key` nothing changes.'
+- 'Do the same for `runs` in that module: with `key`, `op` is applied to key(element) values, but the runs still
+  hold the original elements.'
+- 'Change of plan: call the argument `keyfunc` in all three functions, like `sift` does. Passing `key=` must still
+  work for now, but emit a DeprecationWarning.'
+- 'Add a `words=False` option to SymPy''s `ordinal` helper: with words=True, 1 through 12 are spelled out (''first'',
+  ''second'', ..., ''twelfth''); other numbers keep the numeric form (''13th'').'
+- With words=True, negative numbers get 'minus ' in front ('minus third'), and zero is 'zeroth'.
+- Put the word table in a module-level dict called ORDINAL_WORDS (int -> word) so other code can reuse it, and extend
+  it through 20 ('twentieth').
+- 'Add an `is_involution` property to SymPy''s Permutation: True when applying the permutation twice gives the identity
+  (the identity itself counts).'
+- Also add a `fixed_points()` method that returns a sorted list of the points the permutation leaves in place.
+- 'Change of plan for fixed points: make `fixed_points` a property that returns a tuple instead of a method, like
+  `cycle_structure` is a property. Nothing else in sympy should break.'
+requirements:
+  dr_basic: test_dr_basic
+  dr_base: test_dr_base
+  dr_negative: test_dr_negative
+  dr_bad_base: test_dr_bad_base
+  mdr: test_mdr
+  mdr_base: test_mdr_base
+  exports: test_exports
+  len_parts: test_len_parts
+  self_conjugate: test_self_conjugate
+  ferrers_sep: test_ferrers_sep
+  ferrers_default: test_ferrers_default
+  ferrers_empty_char: test_ferrers_empty_char
+  prefix_keyfunc: test_prefix_keyfunc
+  suffix_keyfunc: test_suffix_keyfunc
+  default_unchanged: test_default_unchanged
+  runs_keyfunc: test_runs_keyfunc
+  key_alias_deprecated: test_key_alias_deprecated
+  words_1_12: test_words_1_12
+  words_13_20: test_words_13_20
+  numeric_default: test_numeric_default
+  negative: test_negative
+  zero: test_zero
+  table: test_table
+  involution: test_involution
+  fixed_points_values: test_fixed_points_values
+  fixed_points_tuple_property: test_fixed_points_tuple_property
+repo_src: D:/ArbiterBench/repos/sympy-1.14.0
+python: D:/ArbiterBench/venvs/sympy/Scripts/python.exe
+integrity: modified
+pre_index: true
+notes: 5 tasks of tasks_realrepo_v1 in one session (rr_digital_root, rr_int_partition, rr_iter_keyfunc, rr_ordinal_words,
+  rr_perm_fixed)
