@@ -464,3 +464,23 @@ Changing the effort mid-thread (in the `full_effort` / `full_s1` runs): the firs
 64% of its input cached, against 95% with no switch; after low -> high only Codex's fixed 12k-token prefix was
 cached, consistent with Codex dropping the earlier turns' reasoning. Nothing else changes (same history, same
 pass rates), but the history is billed once at the uncached rate, so the effort is best set per thread.
+
+## The prompt cache is kept per reasoning effort; effort per thread (2026-09-30)
+
+A real gpt-6-luna thread (first prompt ~6k tokens): efforts low, low, low had 31,488 and 32,512 tokens
+cached on turns 2 and 3; low, high, low had 6,912 of 31,935 on turn 2 (only Codex's fixed prefix) and
+31,488 of 31,952 on turn 3, back at low. Codex sends identical input either way (checked against the mock
+model), so the provider keeps a cache per effort and a mid-thread change re-bills the history once.
+
+Deciding the effort at a thread's first prompt and keeping it (`full_effort_thread`), Codex on
+gpt-6-sol, 15 sessions per repo, same model as the rows above:
+
+| repo | full (high) | per-prompt routing | per-thread routing |
+|---|---|---|---|
+| date-fns | $0.331, 92.8% cached, 15/15 | $0.161, 88.9%, 9 switches, 15/15 | **$0.158 (-52%), 91.1%, 0 switches, 15/15** |
+| sympy | $0.216, 91.5% cached, 12/15 | $0.126, 90.3%, 3 switches, 12/15 | **$0.138 (-36%), 90.9%, 0 switches, 13/15** |
+
+The per-prompt switches came from short follow-ups classified high ("Do the same for `previousDay`"),
+which a per-thread call avoids. Every thread here started with a low call; hard_v1's first prompts are
+mostly called high (6 of 8), so those threads would run at high. Shipped as `system1.effort_advice`:
+Pi sets the thinking level before its first request, Codex shows a message at the first hook.
