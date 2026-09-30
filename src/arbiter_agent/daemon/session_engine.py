@@ -903,6 +903,13 @@ class SessionEngine:
             return None
         return Path(self.db).parent.parent / "logs" / "system1.jsonl"     # <home>/data/controller.sqlite
 
+    def _brief_after_pack(self, sid: str, cwd: str, query: str, fut: Any) -> None:
+        try:
+            res = fut.result(timeout=60)
+        except Exception:
+            return
+        self._start_brief(sid, cwd, query, res)
+
     def _start_brief(self, sid: str, cwd: str, query: str, res: dict[str, Any]) -> None:
         """A brief of the new task from the pack's files, written by system 1 (``system1.brief``): where the
         change goes, what to reuse, which tests cover it. Delivered at the next tool hook."""
@@ -1208,6 +1215,9 @@ class SessionEngine:
                 # session's next tool hook instead (seen in benchmark runs, 2026-09-25).
                 self._late_packs[sid] = (fut, query, time.monotonic())
                 self.stats["auto_context_late"] = self.stats.get("auto_context_late", 0) + 1
+                if not qctx["pins_only"] and self.config.get("system1.brief", False):
+                    # The brief waits for the late pack (Codex's 2.5 s prompt window is usually too short).
+                    self._s1_submit(self._brief_after_pack, sid, cwd, query, fut)
             else:
                 self.stats["auto_context_skipped"] = self.stats.get("auto_context_skipped", 0) + 1
             return None

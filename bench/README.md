@@ -417,3 +417,22 @@ luna's three hard_v1 failures had finished with no test run at all (the claim-on
 Run notes: 9 concurrent agents exhausted memory (keep <= 6); per-run index caches filled the disk (now
 removed after each run); hard_v1's distinct_partitions dropped a hidden requirement the prompt never asked
 for (raising on negative input), and earlier hard_v1 runs were rescored.
+
+## System 1 on the user's real setup: Codex gpt-6-sol / high (2026-09-29)
+
+Same model in every condition, same run, 3 reps, 15 sessions per cell, API prices; `full_s1` includes
+its own gpt-6-luna calls (~$0.011/session). `full_trust`: a post-edit run still in progress is announced
+and a result says it's current, Codex's post-edit window 4.3 s. `full_s1`: `full_trust` plus a task
+brief, a review of the diff at stop and low/high effort per prompt, all by system 1 (gpt-6-luna through
+`codex exec`; `arbiter_agent.system1`).
+
+| repo | no Arbiter | full | full_trust | full_s1 | full_s1 vs full |
+|---|---|---|---|---|---|
+| date-fns | $0.444, 15/15 | $0.331 (-25%), 15/15 | $0.325 (-27%), 15/15 | **$0.213 (-52%)**, 15/15 | -36% (CI -43% to -27%) |
+| sympy | $0.251, 12/15 | $0.216 (-14%), 12/15 | $0.213 (-15%), 12/15 | **$0.167 (-34%)**, 12/15 | -23% (CI -31% to -14%) |
+
+Where it comes from: 83 of 90 `full_s1` turns ran at low effort (the classifier called 7 high). The
+judge flagged problems in 73 of 134 reviews and sent the agent back once in 28 of 30 sessions; briefs
+reached 18 of 30 sessions (a pack that missed Codex's 2.5 s prompt window started none: fixed since).
+Tool calls halved (565 -> 278, 384 -> 207). The trust note alone did nothing measurable. Fast-apply
+edits were dropped before building: re-typed patch lines are 1.5-2.3% of a sol/high session's cost.
