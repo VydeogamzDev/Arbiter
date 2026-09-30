@@ -156,6 +156,7 @@ routing:                      # cheap model first (opt-in): every code-changing 
   enabled: false              # sends the agent back, and repeated failures on a cheap model suggest the strong one
   cheap_models: ["*luna*", "*mini*", "*haiku*"]
   strong_model: gpt-6-sol
+  escalate: model              # model (recommend strong_model) | effort (recommend high reasoning effort)
   escalate_after_failed_turns: 2
   stop_test_budget_s: 4.0
 

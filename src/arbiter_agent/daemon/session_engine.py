@@ -854,11 +854,15 @@ class SessionEngine:
                            blocked=blocked, note=tested.summary())
         client = sid.split(":", 1)[0]
         model = self._session_model(client, sid) or self._last_model.get(client) or ""
-        cheap = self._is_cheap(model)
+        by_effort = str(self.config.get("routing.escalate", "model")) == "effort"
+        cheap = by_effort or self._is_cheap(model)
         if cheap and (n >= int(self.config.get("routing.escalate_after_failed_turns", 2)) or not blocked):
             strong = str(self.config.get("routing.strong_model", "gpt-6-sol"))
-            resp["systemMessage"] = (f"Arbiter: the tests still fail after {n} attempt(s) by {model}. Switching this "
-                                     f"thread to {strong} is likely cheaper than more retries.")
+            resp["systemMessage"] = (
+                f"Arbiter: the tests still fail after {n} attempt(s). Raising this thread's reasoning effort to high "
+                "is likely cheaper than more retries." if by_effort else
+                f"Arbiter: the tests still fail after {n} attempt(s) by {model}. Switching this thread to {strong} is "
+                "likely cheaper than more retries.")
             if client == "pi":
                 resp["arbiterRouting"] = {"model": strong}
             self.stats["escalations"] = self.stats.get("escalations", 0) + 1

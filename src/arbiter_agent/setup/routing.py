@@ -7,10 +7,15 @@ from the model; Arbiter's part is making the cheap model safe (``routing.enabled
 turn that changed code is tested at stop, a failing turn goes back to the agent, and repeated failures
 tell the user to switch the thread to the strong model).
 
-``enable`` turns that on in Arbiter's config. With ``codex_default`` it also sets Codex's default model
-and effort (top-level ``model`` / ``model_reasoning_effort`` in config.toml), after backing the file up;
-the previous values are recorded, and ``disable`` restores them unless the user has changed them since.
-Hooks can't switch a Codex turn's model, so the default is how the cheap model gets used there.
+Same model, measured 2026-09-29 on the user's real setup (gpt-6-sol): running routine prompts at low
+effort cut Codex + Arbiter's cost 42-51% at the same pass rate (``--codex-effort low``; repeated failures
+then recommend high effort), and on 15-prompt threads Codex's auto-compaction at 60k tokens cut 22-37%
+(``--codex-compact 60000``).
+
+``enable`` turns routing on in Arbiter's config. The Codex options set top-level keys in config.toml
+(``model``, ``model_reasoning_effort``, ``model_auto_compact_token_limit``) after backing the file up; the
+previous values are recorded, and ``disable`` restores each one unless the user has changed it since.
+Hooks can't switch a Codex turn's model or effort, so the defaults are how these get used there.
 """
 
 from __future__ import annotations
@@ -28,7 +33,8 @@ from arbiter_agent.clients.client_env import ClientEnv, current_env
 from arbiter_agent.paths import ArbiterPaths, write_private
 
 CHEAP = {"model": "gpt-6-luna", "model_reasoning_effort": "medium"}
-_KEY = re.compile(r"^(model|model_reasoning_effort)\s*=\s*(.*?)\s*(#.*)?$")
+KEYS = ("model", "model_reasoning_effort", "model_auto_compact_token_limit")
+_KEY = re.compile(r"^(model|model_reasoning_effort|model_auto_compact_token_limit)\s*=\s*(.*?)\s*(#.*)?$")
 
 
 def _record_path(paths: ArbiterPaths) -> Path:
@@ -42,10 +48,12 @@ def load_record(paths: ArbiterPaths) -> dict[str, Any] | None:
         return None
 
 
-def _set_arbiter(paths: ArbiterPaths, enabled: bool) -> None:
+def _set_arbiter(paths: ArbiterPaths, enabled: bool, escalate: str | None = None) -> None:
     cfg = paths.config_file
     data = (yaml.safe_load(cfg.read_text(encoding="utf-8")) if cfg.exists() else None) or {}
     data.setdefault("routing", {})["enabled"] = enabled
+    if escalate:
+        data["routing"]["escalate"] = escalate
     cfg.parent.mkdir(parents=True, exist_ok=True)
     write_private(cfg, yaml.safe_dump(data, sort_keys=False).encode())
 
@@ -84,23 +92,31 @@ def set_top_level(text: str, values: dict[str, str | None]) -> str:
     return "\n".join(body + rest) + ("\n" if (body or rest) else "")
 
 
-def enable(paths: ArbiterPaths, *, codex_default: bool = False, dry_run: bool = False,
-           env: ClientEnv | None = None) -> str:
-    lines = ["Routing: Arbiter tests every turn that changed code and sends a failing one back to the agent; "
-             "after repeated failures on a cheap model it recommends switching the thread to gpt-6-sol."]
+def enable(paths: ArbiterPaths, *, codex_default: bool = False, codex_effort: str | None = None,
+           codex_compact: int | None = None, dry_run: bool = False, env: ClientEnv | None = None) -> str:
+    values: dict[str, str] = {}
+    if codex_default:
+        values.update({k: json.dumps(v) for k, v in CHEAP.items()})
+    if codex_effort:
+        values["model_reasoning_effort"] = json.dumps(codex_effort)
+    if codex_compact:
+        values["model_auto_compact_token_limit"] = str(int(codex_compact))
+    escalate = "effort" if codex_effort and not codex_default else "model"
+    lines = ["Routing: Arbiter tests every turn that changed code and sends a failing one back to the agent; after "
+             "repeated failures it recommends " + ("high reasoning effort for the thread." if escalate == "effort"
+                                                   else "switching the thread to gpt-6-sol.")]
     target = None
     before: dict[str, str] = {}
-    if codex_default:
+    if values:
         env = env or current_env()
         target = env.codex_config
         text = target.read_text("utf-8") if target.exists() else ""
         before = top_level(text)
-        lines.append(f"Codex default ({target}): model {before.get('model', '(unset)')} -> \"{CHEAP['model']}\", "
-                     f"effort {before.get('model_reasoning_effort', '(unset)')} -> "
-                     f"\"{CHEAP['model_reasoning_effort']}\"")
+        for k, v in values.items():
+            lines.append(f"Codex ({target}): {k} {before.get(k, '(unset)')} -> {v}")
     if dry_run:
         return "\n".join(lines + ["(dry run: nothing written)"])
-    _set_arbiter(paths, True)
+    _set_arbiter(paths, True, escalate)
     rec: dict[str, Any] = {"at": time.time(), "codex": None}
     if target is not None:
         backup = None
@@ -110,8 +126,8 @@ def enable(paths: ArbiterPaths, *, codex_default: bool = False, dry_run: bool = 
             shutil.copyfile(target, backup)
         text = target.read_text("utf-8") if target.exists() else ""
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(set_top_level(text, {k: json.dumps(v) for k, v in CHEAP.items()}), encoding="utf-8")
-        rec["codex"] = {"config": str(target), "before": before, "set": {k: json.dumps(v) for k, v in CHEAP.items()},
+        target.write_text(set_top_level(text, dict(values)), encoding="utf-8")
+        rec["codex"] = {"config": str(target), "before": before, "set": values,
                         "backup": str(backup) if backup else None}
     paths.state.mkdir(parents=True, exist_ok=True)
     write_private(_record_path(paths), json.dumps(rec, indent=2).encode())
@@ -141,8 +157,10 @@ def disable(paths: ArbiterPaths) -> str:
 def status(paths: ArbiterPaths, env: ClientEnv | None = None) -> str:
     rec = load_record(paths)
     if not rec:
-        return "routing: off. `arbiter routing enable` (add `--codex-default` to make gpt-6-luna Codex's default)"
+        return ("routing: off. `arbiter routing enable` with `--codex-effort low` (sol at low effort, high when it "
+                "struggles), `--codex-default` (gpt-6-luna) and/or `--codex-compact 60000` (long threads)")
     env = env or current_env()
     now = top_level(env.codex_config.read_text("utf-8")) if env.codex_config.exists() else {}
-    return (f"routing: on; Codex default model {now.get('model', '(unset)')}, "
-            f"effort {now.get('model_reasoning_effort', '(unset)')}")
+    return (f"routing: on; Codex model {now.get('model', '(unset)')}, effort "
+            f"{now.get('model_reasoning_effort', '(unset)')}, auto-compact "
+            f"{now.get('model_auto_compact_token_limit', '(default)')}")

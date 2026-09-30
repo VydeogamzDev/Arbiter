@@ -436,3 +436,25 @@ judge flagged problems in 73 of 134 reviews and sent the agent back once in 28 o
 reached 18 of 30 sessions (a pack that missed Codex's 2.5 s prompt window started none: fixed since).
 Tool calls halved (565 -> 278, 384 -> 207). The trust note alone did nothing measurable. Fast-apply
 edits were dropped before building: re-typed patch lines are 1.5-2.3% of a sol/high session's cost.
+
+## Ablation and long sessions on gpt-6-sol (2026-09-29)
+
+Effort routing alone (`full_effort`: system 1 picks low/high per prompt, nothing else), 15 sessions per
+repo, run after the table above: date-fns **$0.161**, 15/15; sympy **$0.126**, 12/15. That's cheaper
+than `full_s1` ($0.213 / $0.167) at the same pass rate: the whole saving is running routine prompts at low
+effort (-51% / -42% against `full`); the brief and the judge added cost and changed no outcome here. The
+judge prompt was since tightened (offline, false alarms on passing sessions 19/27 -> 4/27).
+
+`long_v1`, one 15-prompt thread per repo (the same prompts as the five 3-prompt tasks), sol/high,
+`full`, 2 reps (directional):
+
+| | date-fns | sympy |
+|---|---|---|
+| a thread per task (the realrepo runs) | $1.65 | $1.08 |
+| one long thread | $2.37 (+43%) | $1.54 (+43%) |
+| + Codex auto-compaction at 60k tokens (`full_compact`) | $1.50 (-37%) | $1.21 (-22%) |
+| + a fresh thread when system 1 calls a prompt a new task (`full_handoff`) | $1.67 (-30%) | $1.41 (-8%) |
+
+Same pass rates everywhere (sympy's one miss is the ambiguous negative-ordinal requirement). System 1's
+new-task call found 8 of 8 boundaries on sympy and 4 of 8 on date-fns (it never split a follow-up).
+What ships: `arbiter routing enable --codex-effort low --codex-compact 60000` (opt-in, reversible).

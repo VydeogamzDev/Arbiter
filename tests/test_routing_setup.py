@@ -60,3 +60,14 @@ def test_enable_without_codex_default_touches_only_arbiter(home, tmp_path):
     routing.enable(home, env=env)
     assert env.codex_config.read_text("utf-8") == CODEX
     assert yaml.safe_load(home.config_file.read_text("utf-8"))["routing"]["enabled"] is True
+
+
+def test_effort_and_compaction_options(home, tmp_path):
+    env = _env(tmp_path)
+    routing.enable(home, codex_effort="low", codex_compact=60000, env=env)
+    now = routing.top_level(env.codex_config.read_text("utf-8"))
+    assert now == {"model": '"gpt-6-sol"', "model_reasoning_effort": '"low"', "model_auto_compact_token_limit": "60000"}
+    assert yaml.safe_load(home.config_file.read_text("utf-8"))["routing"]["escalate"] == "effort"
+    routing.disable(home)
+    assert routing.top_level(env.codex_config.read_text("utf-8")) == {"model": '"gpt-6-sol"',
+                                                                      "model_reasoning_effort": '"high"'}
