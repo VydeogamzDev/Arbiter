@@ -119,11 +119,13 @@ FILES:
 {files}
 """
 
-JUDGE_PROMPT = """You review a coding agent's change before it tells the user it's done. Compare the change to
-what the user asked. Reply with exactly `OK` if it does everything asked. Otherwise reply with up to three short
-numbered problems, each a concrete thing the user asked that the change doesn't do or gets wrong (a missing
-requirement, a wrong edge case the request names, an incomplete fix). Don't comment on style, naming or tests
-that aren't asked for.
+# Offline, on 30 finished sol/high sessions (2026-09-29): an earlier, looser prompt flagged 19 of 27 passing sessions;
+# requiring quoted request words and "not sure = not a problem" cut that to 4 of 27, catching the same failure.
+JUDGE_PROMPT = """You review a coding agent's finished change. Compare it to what the user asked, request by request.
+Only report a problem when you can quote the words of a request that the diff clearly does not satisfy, and name the
+part of the diff (or its absence) that shows it. Behavior the requests don't mention is not a problem; neither are
+style, naming, docs or extra tests. If you are not sure, it is not a problem. Reply with exactly `OK` if there are no
+such problems, otherwise up to three numbered lines: "<quoted request words>: <what the diff does instead>".
 
 WHAT THE USER ASKED (in order):
 {requests}
