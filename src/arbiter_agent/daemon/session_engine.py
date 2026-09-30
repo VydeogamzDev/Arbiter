@@ -115,6 +115,14 @@ class SessionEngine:
         self.context_provider: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None
         self.pack_provider: Callable[[str, dict[str, Any], float, int], dict[str, Any]] | None = None
         self._late_packs: dict[str, tuple[Any, str, float]] = {}   # sid -> (future, query, started)
+        # System 1 (arbiter_agent.system1): a cheap model's brief of a new task and review of the diff
+        from arbiter_agent.system1 import System1
+
+        self.system1 = System1(config)
+        self._s1_pool: Any = None
+        self._briefs: dict[str, tuple[int, Any]] = {}      # sid -> (goal epoch, future of the brief text)
+        self._judges: dict[str, tuple[str, Any]] = {}      # sid -> (repo fingerprint, future of the problems)
+        self._judged: dict[str, int] = {}                  # sid -> goal epoch whose stop a review sent back
         self.auto_tester = AutoTester(config)   # completion.auto_test: Arbiter runs the tests itself
         self._test_pending: dict[str, str] = {}     # sid -> repo root with an undelivered post-edit test run
         self._test_announced: dict[str, str] = {}   # sid -> repo state last reported to the agent
@@ -772,6 +780,10 @@ class SessionEngine:
                     asked = self._ask_for_tests(sid, st)
                     if asked:
                         return asked
+            if self.config.get("system1.judge", False) and can_block and int(st["stop_blocks"]) < max_blocks:
+                reviewed = self._review_at_stop(sid, st, deadline)
+                if reviewed:
+                    return reviewed
             fc = st["flags"].get("finish_check_ordinal")
             message = payload.get("last_assistant_message") or self._last_agent_response(sid)
             claim = claim_detection.classify(message,
@@ -876,6 +888,162 @@ class SessionEngine:
                   "fix any failure before you finish.")
         self.record_ledger(sid, None, trigger="stop_hook", claim="changed_turn", verdict="unverified", mode="block",
                            blocked=True, note="asked the agent to run the related tests")
+        return {"decision": "block", "reason": reason}
+
+    # ------------------------------------------------------------------ system 1
+    def _s1_submit(self, fn: Any, *args: Any) -> Any:
+        import concurrent.futures as cf
+
+        if self._s1_pool is None:
+            self._s1_pool = cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="system1")
+        return self._s1_pool.submit(fn, *args)
+
+    def _s1_debug(self) -> Path | None:
+        if not self.config.get("system1.debug_log", False):
+            return None
+        return Path(self.db).parent.parent / "logs" / "system1.jsonl"     # <home>/data/controller.sqlite
+
+    def _start_brief(self, sid: str, cwd: str, query: str, res: dict[str, Any]) -> None:
+        """A brief of the new task from the pack's files, written by system 1 (``system1.brief``): where the
+        change goes, what to reuse, which tests cover it. Delivered at the next tool hook."""
+        if not self.system1.enabled:
+            return
+        picks = [str(p) for p in (res.get("picks") or [])][:8]
+        if not picks:
+            return
+        try:
+            root = Path(identify(cwd).root)
+        except Exception:
+            root = Path(cwd)
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+        finally:
+            rc.close()
+        epoch = int(st["goal_epoch"] or 0) if st else 0
+
+        def job() -> str | None:
+            from arbiter_agent.system1 import BRIEF_PROMPT, write_debug
+
+            # The pack's own text first: for a large file it holds the definitions the prompt names (a head
+            # cut of sympy's misc.py missed `ordinal` itself). Then every smaller pick in full, numbered.
+            chunks = [str(res.get("text") or "")[:14000]]
+            used = len(chunks[0])
+            for rel in picks:
+                try:
+                    text = (root / rel).read_text("utf-8", errors="replace")
+                except OSError:
+                    continue
+                if len(text) > 12000:
+                    continue
+                numbered = "\n".join(f"{i + 1:5d}  {ln}" for i, ln in enumerate(text.splitlines()))
+                if used + len(numbered) > 40000:
+                    break
+                chunks.append(f"=== {rel} (complete, with line numbers)\n{numbered}")
+                used += len(numbered)
+            if not chunks:
+                return None
+            prompt = BRIEF_PROMPT.format(words=int(self.config.get("system1.brief_words", 200)), task=query[:3000],
+                                         files="\n\n".join(chunks))
+            answer = self.system1.complete(prompt, max_tokens=700)
+            write_debug(self._s1_debug(), "brief", prompt, answer)
+            return answer
+
+        self._briefs[sid] = (epoch, self._s1_submit(job))
+        self.stats["system1_briefs"] = self.stats.get("system1_briefs", 0) + 1
+
+    def _take_brief(self, sid: str) -> str | None:
+        item = self._briefs.get(sid)
+        if item is None or not item[1].done():
+            return None
+        self._briefs.pop(sid, None)
+        try:
+            text = item[1].result(timeout=0)
+        except Exception:
+            return None
+        if not text:
+            return None
+        return ("[Arbiter] Task brief from a fast model that read the files above (check details before you rely "
+                "on them):\n" + text.strip()[:2500])
+
+    def _judge_inputs(self, sid: str, root: str) -> tuple[str, str, str] | None:
+        rc = self._read()
+        try:
+            st = self._state(rc, sid, create=False)
+            intents = intent_log.load_intents(rc, sid, int(st["epoch_start_ordinal"] or 0)) if st else []
+        finally:
+            rc.close()
+        requests = "\n".join(f"{i + 1}. {it.text[:1500]}" for i, it in enumerate(intents[-6:])) if intents else ""
+        import subprocess
+
+        try:
+            diff = subprocess.run(["git", "-C", root, "diff", "--no-color", "HEAD"], capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=10,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if not requests or not diff.strip():
+            return None
+        last = self.auto_tester.ready(root)
+        tests = last.summary(max_chars=300) if last is not None else "none yet"
+        return requests, diff[:16000], tests
+
+    def _start_judge(self, sid: str) -> None:
+        """Review the current diff against the task's requests (``system1.judge``), in the background: the
+        result is keyed to the repo's state, so an edit after it makes it stale."""
+        if not self.system1.enabled:
+            return
+        root = self._repo_root(sid)
+        if not root:
+            return
+        state = auto_test.fingerprint(Path(root))
+        cur = self._judges.get(sid)
+        if cur is not None and cur[0] == state:
+            return
+
+        def job() -> list[str] | None:
+            from arbiter_agent.system1 import JUDGE_PROMPT, parse_judge, write_debug
+
+            inputs = self._judge_inputs(sid, root)
+            if inputs is None:
+                return None
+            requests, diff, tests = inputs
+            prompt = JUDGE_PROMPT.format(requests=requests, diff=diff, tests=tests)
+            answer = self.system1.complete(prompt, max_tokens=400)
+            write_debug(self._s1_debug(), "judge", prompt, answer)
+            return parse_judge(answer)
+
+        self._judges[sid] = (state, self._s1_submit(job))
+        self.stats["system1_judges"] = self.stats.get("system1_judges", 0) + 1
+
+    def _review_at_stop(self, sid: str, st: dict[str, Any], deadline: Deadline) -> dict[str, Any] | None:
+        """A review of the current files that found concrete problems sends the agent back, once per goal
+        epoch. A review still running is waited for within the stop hook's budget, never longer."""
+        epoch = int(st["goal_epoch"] or 0)
+        if self._judged.get(sid) == epoch:
+            return None
+        root = self._repo_root(sid)
+        if not root:
+            return None
+        state = auto_test.fingerprint(Path(root))
+        cur = self._judges.get(sid)
+        if cur is None or cur[0] != state:
+            self._start_judge(sid)
+            cur = self._judges.get(sid)
+            if cur is None:
+                return None
+        try:
+            problems = cur[1].result(timeout=max(0.0, deadline.remaining() - 0.5))
+        except Exception:
+            return None
+        if not problems:
+            return None
+        self._judged[sid] = epoch
+        reason = ("[Arbiter] A second look at the change against the request found:\n" + "\n".join(problems) +
+                  "\nFix these, or if one is wrong, say why, before you finish.")
+        self.record_ledger(sid, None, trigger="stop_hook", claim="review", verdict="unverified", mode="block",
+                           blocked=True, note="; ".join(problems)[:500])
+        self.stats["system1_review_blocks"] = self.stats.get("system1_review_blocks", 0) + 1
         return {"decision": "block", "reason": reason}
 
     def _is_cheap(self, model: str) -> bool:
@@ -1048,6 +1216,8 @@ class SessionEngine:
             return None
         finally:
             ex.shutdown(wait=False)
+        if use_pack and not qctx["pins_only"] and self.config.get("system1.brief", False):
+            self._start_brief(sid, cwd, query, res)
         if use_pack:
             if mode is None:
                 unknown = str(self.config.get("retrieval.auto_context_pack_unknown", "map_then_upgrade"))
@@ -1178,6 +1348,9 @@ class SessionEngine:
             text = self._take_late_pack(sid)
             if text:
                 parts.append(text)
+        brief = self._take_brief(sid)
+        if brief:
+            parts.append(brief)
         try:
             tested = self._auto_test_after_tool(sid, payload, deadline)
         except Exception:
@@ -1185,6 +1358,8 @@ class SessionEngine:
             tested = None
         if tested:
             parts.append(tested)
+        if self.config.get("system1.judge", False) and str(payload.get("tool_name") or "").lower() in facts.EDIT_TOOLS:
+            self._start_judge(sid)
         return ui_status.hook_context(name, "\n".join(parts)) if parts else {}
 
     def _note_known(self, sid: str, payload: dict[str, Any]) -> None:
@@ -1243,8 +1418,22 @@ class SessionEngine:
             return None
         budget = min(auto_test.edit_budget(self.config, sid.split(":", 1)[0]), deadline.remaining() - 0.2)
         out = self.auto_tester.run(root, max(0.0, budget), changed=self._changed.get(sid))
+        trust = bool(self.config.get("completion.auto_test_trust_note", False))
         if out is None or self.auto_tester.ready(root) is not out:
-            return None                                # still running, or the files moved on: later hook
+            # Still running, or the files moved on: the result comes with a later hook. Without saying so,
+            # gpt-6-sol ran the tests itself before it arrived: 65 of 73 of its own runs on date-fns and 61 of
+            # 75 on sympy came before Arbiter's result (2026-09-29).
+            if trust and tool in facts.EDIT_TOOLS and self._test_announced.get(f"{sid}#pending") != str(
+                    self._changed.get(sid)):
+                self._test_announced[f"{sid}#pending"] = str(self._changed.get(sid))
+                try:
+                    cmd = self.auto_tester.command(Path(root), self._changed.get(sid))
+                except Exception:
+                    cmd = None
+                if cmd:
+                    return (f"[Arbiter] Testing this change: `{cmd}` is running on the current files. Its result "
+                            "comes with your next tool call, so you don't need to run these tests yourself.")
+            return None
         self._test_pending.pop(sid, None)
         if self._test_announced.get(sid) == out.state:
             return None
@@ -1261,6 +1450,9 @@ class SessionEngine:
             if self._test_announced.get(f"{sid}#unknown"):
                 return None
             self._test_announced[f"{sid}#unknown"] = "1"
+        if trust and out.result.status == "pass":
+            return out.summary() + (" This is the result for the files as they are now: you don't need to run "
+                                    "these tests again unless you change the code.")
         return out.summary()
 
     def _auto_test_at_stop(self, sid: str, ledger: Any, deadline: Deadline) -> bool:

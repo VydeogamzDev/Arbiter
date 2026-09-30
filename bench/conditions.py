@@ -27,6 +27,7 @@ class Condition:
     agent_env: tuple[tuple[str, str], ...] = ()   # extra environment for the agent process
     codex_config: tuple[str, ...] = ()            # extra `codex exec -c key=value` settings
     workspace_files: tuple[tuple[str, str], ...] = ()   # (path, text) written into the workspace, git-excluded
+    effort_router: bool = False                   # codex: system 1 picks low/high effort per prompt (user applies it)
 
     @property
     def uses_arbiter(self) -> bool:
@@ -41,6 +42,10 @@ code yourself first. When the sub-agent finishes, review its diff and the test r
 that is wrong, and reply to the user.
 """
 BLOCK = {"completion": {"gate_mode": "block"}}
+# System 1 through the benchmark's own Codex sign-in (gpt-6-luna), never the user's.
+S1 = {"backend": "codex", "codex_bin": "D:/ArbiterBench/bin/codex.exe", "codex_home": "D:/ArbiterBench/codex-home",
+      "debug_log": True}
+TRUST = {"completion": {"auto_test_trust_note": True, "auto_test_client_budget_s": {"codex": 4.3, "pi": 8.0}}}
 CONTEXT = {"retrieval": {"auto_context": True}, "ui": {"inject_status": True}}
 
 
@@ -75,6 +80,17 @@ CONDITIONS: dict[str, Condition] = {c.name: c for c in [
                             "call)",
               hooks=ALL_HOOKS, mcp=True, config=_merge(BLOCK, CONTEXT), encoder=True,
               agent_env=(("ARBITER_PI_APPLY_PATCH", "1"),)),
+    Condition("full_trust", "full, plus: a post-edit test run still in progress is announced, a result says it's "
+                            "current, and Codex's post-edit window is 4.3 s (sol re-ran tests before results arrived)",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, config=_merge(BLOCK, CONTEXT, TRUST)),
+    Condition("full_s1", "full_trust, plus system 1 (gpt-6-luna): a task brief, a review of the diff at stop, and "
+                         "low/high effort per prompt",
+              hooks=ALL_HOOKS, mcp=True, encoder=True, effort_router=True,
+              config=_merge(BLOCK, CONTEXT, TRUST, {"system1": {**S1, "brief": True, "judge": True}})),
+    Condition("full_brief", "full, plus a system-1 task brief", hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "brief": True}})),
+    Condition("full_judge", "full, plus a system-1 review of the diff at stop", hooks=ALL_HOOKS, mcp=True, encoder=True,
+              config=_merge(BLOCK, CONTEXT, {"system1": {**S1, "judge": True}})),
     Condition("full_route", "full, plus routing: every code-changing turn tested at stop, failures sent back, "
                             "repeated failures on a cheap model escalate (with --escalate-model the harness switches "
                             "the thread, as the user would)",

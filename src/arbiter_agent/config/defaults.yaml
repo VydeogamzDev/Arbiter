@@ -159,6 +159,20 @@ routing:                      # cheap model first (opt-in): every code-changing 
   escalate_after_failed_turns: 2
   stop_test_budget_s: 4.0
 
+system1:                      # a cheap model beside the agent's (opt-in): see arbiter_agent/system1
+  backend: "off"              # off | codex (codex exec on `model`) | openai (OpenAI-compatible server at base_url)
+  model: gpt-6-luna
+  effort: low
+  codex_bin: null             # codex executable (default: `codex` on PATH)
+  codex_home: null            # a separate Codex sign-in for system-1 calls (default: the user's)
+  base_url: http://127.0.0.1:8080/v1
+  timeout_s: 60.0
+  brief: false                # write a task brief from the pack's files at a new task (delivered at the next hook)
+  brief_words: 200
+  judge: false                # review the diff against the request after edits; a concrete problem sends the agent back
+  effort_advice: false        # advise low/high reasoning effort per prompt (hosts that can apply it)
+  debug_log: false            # record system-1 prompts and answers under the Arbiter logs
+
 review:
   security_floor: high
   database_migration_floor: high
@@ -180,6 +194,7 @@ completion:
   auto_test_client_budget_s:     # per client, where the host allows a longer hook (Pi's extension has no host
     pi: 8.0                      # timeout); a result that misses the window makes the agent run the tests itself
   auto_test_stop_budget_s: 4.0   # at a completion claim
+  auto_test_trust_note: false    # say a pending run is on its way and a result is current (agents re-ran tests)
   auto_test_timeout_s: 120       # kill a run after this
   auto_test_max_s: 60.0          # a suite slower than this is not auto-run after edits again
   auto_test_settle_s: 0.2        # pause after an edit so parallel edits land before the run

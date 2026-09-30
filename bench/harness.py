@@ -340,6 +340,18 @@ def codex_bench_home() -> Path | None:
     return home
 
 
+def routed_effort(prompt: str, default: str | None) -> str | None:
+    """System 1's low/high call for a prompt (Condition.effort_router): ``low`` when it says so, else the run's
+    effort. Stands in for a user (or a host API) applying Arbiter's advice before sending the prompt."""
+    from arbiter_agent.config.loader import build_config
+    from arbiter_agent.system1 import EFFORT_PROMPT, System1, parse_effort
+
+    s1 = System1(build_config({"system1": {"backend": "codex", "codex_bin": CODEX,
+                                           "codex_home": str(codex_bench_home() or "")}}))
+    verdict = parse_effort(s1.complete(EFFORT_PROMPT.format(request=prompt[:3000]), max_tokens=5, timeout_s=60))
+    return "low" if verdict == "low" else default
+
+
 def escalations(arb: ArbiterRun | None) -> int:
     """Routing escalations Arbiter has recorded in this run (finish ledger rows, trigger ``routing``)."""
     if arb is None:
@@ -389,7 +401,10 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
     i = 0
     while i < len(prompts):
         prompt = prompts[i]
-        mflags = ["-m", model, *(["-c", f'model_reasoning_effort="{effort}"'] if effort else [])]
+        turn_effort = effort
+        if arb and arb.cond.effort_router and model != escalate:
+            turn_effort = routed_effort(prompt, effort)
+        mflags = ["-m", model, *(["-c", f'model_reasoning_effort="{turn_effort}"'] if turn_effort else [])]
         argv = ([CODEX, "exec", *flags, *mflags, "-C", str(ws), prompt] if i == 0
                 else [CODEX, "exec", "resume", *flags, *mflags, str(thread), prompt])
         t0 = time.monotonic()
@@ -431,7 +446,7 @@ def run_codex(task: dict[str, Any], ws: Path, rundir: Path, arb: ArbiterRun | No
             usage = {k: usage[k] - turns[-1]["thread_usage"][k] for k in usage}
         turns.append({"exit": code, "wall_s": round(time.monotonic() - t0, 1), "stderr": err[-2000:],
                       "usage": usage, "thread_usage": thread_usage, "tools": tools, "errors": errors,
-                      "model": model, "effort": effort})
+                      "model": model, "effort": turn_effort})
         if code is None or not thread:
             break
         # The user, told by Arbiter that the cheap model keeps failing, switches the thread to the strong
