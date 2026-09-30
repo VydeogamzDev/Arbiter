@@ -212,8 +212,7 @@ def cmd_routing(a: argparse.Namespace) -> int:
 
     paths = _paths()
     if a.action == "enable":
-        print(routing.enable(paths, codex_default=a.codex_default, codex_effort=a.codex_effort,
-                             codex_compact=a.codex_compact, dry_run=a.dry_run))
+        print(routing.enable(paths, codex_default=a.codex_default, codex_effort=a.codex_effort, dry_run=a.dry_run))
     elif a.action == "disable":
         print(routing.disable(paths))
     else:
@@ -381,8 +380,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--codex-effort", choices=["low", "medium", "high", "xhigh"],
                    help="set Codex's default reasoning effort (low: measured -42%% to -51%% on gpt-6-sol, "
                         "same pass rate)")
-    s.add_argument("--codex-compact", type=int, metavar="TOKENS",
-                   help="set Codex's auto-compaction threshold (60000: -22%% to -37%% on 15-prompt threads)")
     s.add_argument("--dry-run", action="store_true", help="show what would change")
     s.set_defaults(fn=cmd_routing)
 

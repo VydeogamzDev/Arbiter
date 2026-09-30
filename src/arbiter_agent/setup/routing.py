@@ -9,11 +9,11 @@ tell the user to switch the thread to the strong model).
 
 Same model, measured 2026-09-29 on the user's real setup (gpt-6-sol): running routine prompts at low
 effort cut Codex + Arbiter's cost 42-51% at the same pass rate (``--codex-effort low``; repeated failures
-then recommend high effort), and on 15-prompt threads Codex's auto-compaction at 60k tokens cut 22-37%
-(``--codex-compact 60000``).
+then recommend high effort). Set the effort for a thread and keep it: changing it mid-thread served the next
+request's history uncached (64% cached vs 95% without a change), as Codex drops the earlier turns' reasoning.
 
 ``enable`` turns routing on in Arbiter's config. The Codex options set top-level keys in config.toml
-(``model``, ``model_reasoning_effort``, ``model_auto_compact_token_limit``) after backing the file up; the
+(``model``, ``model_reasoning_effort``) after backing the file up; the
 previous values are recorded, and ``disable`` restores each one unless the user has changed it since.
 Hooks can't switch a Codex turn's model or effort, so the defaults are how these get used there.
 """
@@ -33,8 +33,8 @@ from arbiter_agent.clients.client_env import ClientEnv, current_env
 from arbiter_agent.paths import ArbiterPaths, write_private
 
 CHEAP = {"model": "gpt-6-luna", "model_reasoning_effort": "medium"}
-KEYS = ("model", "model_reasoning_effort", "model_auto_compact_token_limit")
-_KEY = re.compile(r"^(model|model_reasoning_effort|model_auto_compact_token_limit)\s*=\s*(.*?)\s*(#.*)?$")
+KEYS = ("model", "model_reasoning_effort")
+_KEY = re.compile(r"^(model|model_reasoning_effort)\s*=\s*(.*?)\s*(#.*)?$")
 
 
 def _record_path(paths: ArbiterPaths) -> Path:
@@ -93,14 +93,12 @@ def set_top_level(text: str, values: dict[str, str | None]) -> str:
 
 
 def enable(paths: ArbiterPaths, *, codex_default: bool = False, codex_effort: str | None = None,
-           codex_compact: int | None = None, dry_run: bool = False, env: ClientEnv | None = None) -> str:
+           dry_run: bool = False, env: ClientEnv | None = None) -> str:
     values: dict[str, str] = {}
     if codex_default:
         values.update({k: json.dumps(v) for k, v in CHEAP.items()})
     if codex_effort:
         values["model_reasoning_effort"] = json.dumps(codex_effort)
-    if codex_compact:
-        values["model_auto_compact_token_limit"] = str(int(codex_compact))
     escalate = "effort" if codex_effort and not codex_default else "model"
     lines = ["Routing: Arbiter tests every turn that changed code and sends a failing one back to the agent; after "
              "repeated failures it recommends " + ("high reasoning effort for the thread." if escalate == "effort"
@@ -157,10 +155,9 @@ def disable(paths: ArbiterPaths) -> str:
 def status(paths: ArbiterPaths, env: ClientEnv | None = None) -> str:
     rec = load_record(paths)
     if not rec:
-        return ("routing: off. `arbiter routing enable` with `--codex-effort low` (sol at low effort, high when it "
-                "struggles), `--codex-default` (gpt-6-luna) and/or `--codex-compact 60000` (long threads)")
+        return ("routing: off. `arbiter routing enable --codex-effort low` (sol at low effort, high when it "
+                "struggles) or `--codex-default` (gpt-6-luna)")
     env = env or current_env()
     now = top_level(env.codex_config.read_text("utf-8")) if env.codex_config.exists() else {}
     return (f"routing: on; Codex model {now.get('model', '(unset)')}, effort "
-            f"{now.get('model_reasoning_effort', '(unset)')}, auto-compact "
-            f"{now.get('model_auto_compact_token_limit', '(default)')}")
+            f"{now.get('model_reasoning_effort', '(unset)')}")

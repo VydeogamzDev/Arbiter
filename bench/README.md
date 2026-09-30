@@ -457,4 +457,10 @@ judge prompt was since tightened (offline, false alarms on passing sessions 19/2
 
 Same pass rates everywhere (sympy's one miss is the ambiguous negative-ordinal requirement). System 1's
 new-task call found 8 of 8 boundaries on sympy and 4 of 8 on date-fns (it never split a follow-up).
-What ships: `arbiter routing enable --codex-effort low --codex-compact 60000` (opt-in, reversible).
+Not shipped (2026-09-30): the user keeps long threads whole, since some work depends on long context.
+What ships: `arbiter routing enable --codex-effort low` (opt-in, reversible).
+
+Changing the effort mid-thread (in the `full_effort` / `full_s1` runs): the first request after a switch had
+64% of its input cached, against 95% with no switch; after low -> high only Codex's fixed 12k-token prefix was
+cached, consistent with Codex dropping the earlier turns' reasoning. Nothing else changes (same history, same
+pass rates), but the history is billed once at the uncached rate, so the effort is best set per thread.
